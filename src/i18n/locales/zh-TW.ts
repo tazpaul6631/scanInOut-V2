@@ -2,7 +2,7 @@ import type { MessageSchema } from './en'
 
 const zhTW: MessageSchema = {
   app: {
-    name: 'SRC VIP',
+    name: 'scanInOutV2',
     booting: '正在開啟磁碟上的 SQLite…',
     initError: '啟動失敗',
   },
@@ -29,11 +29,11 @@ const zhTW: MessageSchema = {
   },
   mobile: {
     historySubtitle: '進出掃描紀錄儲存在裝置 SQLite 上',
-    usbHint: 'USB：選擇檔案傳輸 → 在電腦開啟 Documents/SRC VIP 複製匯出檔',
+    usbHint: 'USB：選擇檔案傳輸 → 在電腦開啟 Documents/scanInOutV2 複製匯出檔',
     usbGuide: 'USB 說明',
     usbGuideTitle: '透過 USB 取得匯出檔',
     usbGuideSteps:
-      '1. 在裝置上匯出 CSV 或 Excel。\n2. 用 USB 線連接電腦。\n3. 在手機選擇「檔案傳輸 / MTP」。\n4. 在電腦開啟 Documents/SRC VIP。\n5. 將匯出檔複製到電腦。\n6. scan-live-log.csv 會在每次掃描時追加（刪除全部紀錄後仍保留）。',
+      '1. 在裝置上匯出 CSV 或 Excel。\n2. 用 USB 線連接電腦。\n3. 在手機選擇「檔案傳輸 / MTP」。\n4. 在電腦開啟 Documents/scanInOutV2。\n5. 將匯出檔複製到電腦。\n6. scan-live-log.csv 會在每次掃描時追加（刪除全部紀錄後仍保留）。',
     savedSession: '本階段：{n}',
     totalInDb: 'SQLite 總計：{n}',
   },
@@ -303,7 +303,7 @@ const zhTW: MessageSchema = {
     productNotFound: '找不到產品',
     cameraFailed: '未從相機取得影像',
     noCamera: '此裝置不支援相機',
-    cameraPermission: '未授予相機權限。請到設定 → SRC VIP → 權限，開啟相機與麥克風。',
+    cameraPermission: '未授予相機權限。請到設定 → scanInOutV2 → 權限，開啟相機與麥克風。',
     noSerial: 'Web Serial 不可用。請使用 Chrome 桌面版或已授權 USB 的 Android。',
     usbNotConnected: '尚未連接 USB',
     noNfc: '此裝置 / 瀏覽器不支援 NFC',

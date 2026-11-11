@@ -1,5 +1,6 @@
-package com.srcvip.app;
+﻿package com.scaninoutv2.app;
 
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {}
+

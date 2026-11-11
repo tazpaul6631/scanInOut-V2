@@ -10,8 +10,8 @@ import { SCHEMA_STATEMENTS, SCHEMA_VERSION } from '@/storage/schema'
 import { persistFlag, writeBinaryFile, readBinaryFile, fileExists } from '@/storage/files'
 import { trError } from '@/i18n'
 
-const DB_NAME = 'srcvip'
-const WEB_DB_PATH = 'db/srcvip.db'
+const DB_NAME = 'scaninoutv2'
+const WEB_DB_PATH = 'db/scaninoutv2.db'
 
 type BindValue = string | number | null
 

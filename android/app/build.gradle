@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.srcvip.app"
+    namespace "com.scaninoutv2.app"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.srcvip.app"
+        applicationId "com.scaninoutv2.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode project.hasProperty('appVersionCode') ? project.property('appVersionCode').toInteger() : 1

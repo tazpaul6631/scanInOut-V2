@@ -1,4 +1,4 @@
-name: src-vip-android
+name: scaninoutv2-android
 
 on:
   push:
@@ -60,7 +60,7 @@ jobs:
             exit 1
           fi
           mkdir -p android/keystore
-          echo "$KEYSTORE_BASE64" | base64 -d > android/keystore/srcvip-release.jks
+          echo "$KEYSTORE_BASE64" | base64 -d > android/keystore/scaninoutv2-release.jks
 
       - name: Build Android APK and App Bundle (Release)
         env:
@@ -77,7 +77,7 @@ jobs:
           ./gradlew assembleRelease bundleRelease \
             -PappVersionCode=$VERSION_CODE \
             -PappVersionName=$VERSION_NAME \
-            -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/android/keystore/srcvip-release.jks \
+            -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/android/keystore/scaninoutv2-release.jks \
             -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
             -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD"
@@ -85,13 +85,13 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: src-vip-apk
+          name: scaninoutv2-apk
           path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 7
 
       - name: Upload AAB Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: src-vip-aab
+          name: scaninoutv2-aab
           path: android/app/build/outputs/bundle/release/app-release.aab
           retention-days: 7

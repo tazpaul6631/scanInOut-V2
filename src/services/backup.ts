@@ -22,8 +22,8 @@ export async function createBackup(): Promise<string> {
     outbox: await listOutbox(),
     settings: await query('SELECT key, value FROM settings'),
   }
-  const filename = `srcvip-backup-${dayjs().format('YYYYMMDD-HHmmss')}.json`
-  await writeTextFile(`SRC VIP/${filename}`, JSON.stringify(snapshot, null, 2), 'documents')
+  const filename = `scaninoutv2-backup-${dayjs().format('YYYYMMDD-HHmmss')}.json`
+  await writeTextFile(`scanInOutV2/${filename}`, JSON.stringify(snapshot, null, 2), 'documents')
   await run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('lastBackupAt', ?)`, [String(now())])
   return filename
 }

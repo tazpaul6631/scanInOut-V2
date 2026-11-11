@@ -4,7 +4,7 @@ import type { AppSettings } from '@/types'
 
 const DEFAULTS: AppSettings = {
   apiUrl: import.meta.env.VITE_API_URL || 'http://localhost:3000',
-  companyName: 'SRC VIP',
+  companyName: 'scanInOutV2',
   scaleBaudRate: 9600,
   bleServiceUuid: '',
   bleCharacteristicUuid: '',

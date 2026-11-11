@@ -2,7 +2,7 @@ import type { MessageSchema } from './en'
 
 const vi: MessageSchema = {
   app: {
-    name: 'SRC VIP',
+    name: 'scanInOutV2',
     booting: 'Đang mở SQLite trên disk…',
     initError: 'Lỗi khởi tạo',
   },
@@ -29,11 +29,11 @@ const vi: MessageSchema = {
   },
   mobile: {
     historySubtitle: 'Lịch sử quét In/Out lưu trong SQLite trên máy',
-    usbHint: 'USB: chọn File Transfer → mở Documents/SRC VIP trên PC để copy file xuất',
+    usbHint: 'USB: chọn File Transfer → mở Documents/scanInOutV2 trên PC để copy file xuất',
     usbGuide: 'Hướng dẫn USB',
     usbGuideTitle: 'Lấy file xuất qua USB',
     usbGuideSteps:
-      '1. Xuất CSV hoặc Excel trên máy.\n2. Cắm dây USB vào PC.\n3. Trên điện thoại chọn chế độ File Transfer / MTP.\n4. Trên PC mở thư mục Documents/SRC VIP.\n5. Copy file xuất về máy tính.\n6. File scan-live-log.csv ghi liên tục mỗi lần quét (không bị xóa khi xóa hết lịch sử).',
+      '1. Xuất CSV hoặc Excel trên máy.\n2. Cắm dây USB vào PC.\n3. Trên điện thoại chọn chế độ File Transfer / MTP.\n4. Trên PC mở thư mục Documents/scanInOutV2.\n5. Copy file xuất về máy tính.\n6. File scan-live-log.csv ghi liên tục mỗi lần quét (không bị xóa khi xóa hết lịch sử).',
     savedSession: 'Phiên này: {n}',
     totalInDb: 'Tổng trong SQLite: {n}',
   },
@@ -304,7 +304,7 @@ const vi: MessageSchema = {
     productNotFound: 'Không tìm thấy sản phẩm',
     cameraFailed: 'Không nhận được ảnh từ camera',
     noCamera: 'Thiết bị không hỗ trợ camera',
-    cameraPermission: 'Chưa cấp quyền camera. Vào Cài đặt → SRC VIP → Quyền, bật Camera và Microphone.',
+    cameraPermission: 'Chưa cấp quyền camera. Vào Cài đặt → scanInOutV2 → Quyền, bật Camera và Microphone.',
     noSerial: 'Web Serial không khả dụng. Dùng Chrome desktop hoặc bản Android đã cấp quyền USB.',
     usbNotConnected: 'Chưa kết nối USB',
     noNfc: 'Thiết bị / trình duyệt không hỗ trợ NFC',

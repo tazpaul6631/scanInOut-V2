@@ -1,6 +1,6 @@
 const en = {
   app: {
-    name: 'SRC VIP',
+    name: 'scanInOutV2',
     booting: 'Opening SQLite on disk…',
     initError: 'Startup error',
   },
@@ -27,11 +27,11 @@ const en = {
   },
   mobile: {
     historySubtitle: 'In/Out scans stored in on-device SQLite on the device',
-    usbHint: 'USB: File Transfer → open Documents/SRC VIP on the PC to copy the export file',
+    usbHint: 'USB: File Transfer → open Documents/scanInOutV2 on the PC to copy the export file',
     usbGuide: 'USB guide',
     usbGuideTitle: 'Get export files via USB',
     usbGuideSteps:
-      '1. Export CSV or Excel on the device.\n2. Connect the USB cable to the PC.\n3. On the phone, choose File Transfer / MTP mode.\n4. On the PC, open Documents/SRC VIP.\n5. Copy the export file to the computer.\n6. scan-live-log.csv appends on every scan (kept even after delete-all).',
+      '1. Export CSV or Excel on the device.\n2. Connect the USB cable to the PC.\n3. On the phone, choose File Transfer / MTP mode.\n4. On the PC, open Documents/scanInOutV2.\n5. Copy the export file to the computer.\n6. scan-live-log.csv appends on every scan (kept even after delete-all).',
     savedSession: 'This session: {n}',
     totalInDb: 'Total in SQLite: {n}',
   },
