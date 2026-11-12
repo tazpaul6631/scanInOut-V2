@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfirm } from 'primevue/useconfirm'
 import dayjs from 'dayjs'
@@ -9,23 +9,20 @@ import Dialog from '@/components/ui/AppDialog.vue'
 import InputText from '@/components/ui/AppInputText.vue'
 import FloatLabel from '@/components/ui/AppFloatLabel.vue'
 import { useBarcodeWedge } from '@/composables/useBarcodeWedge'
-import { createScan, syncScans, toScanApiItem } from '@/services/api/scan'
+import { commandScan, commandScans, toScanApiItem } from '@/services/api/scan'
 import {
   addScanLog,
   countScans,
   countScansByLocation,
   countUnsyncedScans,
   deleteScanLog,
+  finalizeSyncedScans,
   findScanByValue,
   listScanLogsByLocation,
-  listScanLogsPage,
   listUnsyncedScansPage,
-  markScansSynced,
-  summarizeScanLogs,
+  markScanDeleted,
 } from '@/services/repositories/scans'
-import { maybeArchiveScansIfFull } from '@/services/scan-archive'
-import { exportScanWorkbookPaged, type ExportColumn } from '@/services/export'
-import { toExcelLocalDate } from '@/utils/format'
+import { maybeArchiveScansIfFull, SCAN_ARCHIVE_THRESHOLD } from '@/services/scan-archive'
 import { useAuthStore } from '@/stores/auth'
 import { useNetworkStore } from '@/stores/network'
 import type { ScanKind, ScanLog } from '@/types'
@@ -42,27 +39,11 @@ const sessionItems = ref<ScanLog[]>([])
 const locationTotal = ref(0)
 const dbTotal = ref(0)
 const unsyncedCount = ref(0)
-const exporting = ref(false)
 const syncing = ref(false)
 const noticeOpen = ref(false)
 const noticeMessage = ref('')
 
 const SYNC_CHUNK = 500
-const EXPORT_PAGE_SIZE = 1000
-
-const exportColumns = computed<ExportColumn[]>(() => [
-  { key: 'index', header: '#', width: 5 },
-  { key: 'location', header: 'Location', width: 16 },
-  { key: 'barcode', header: 'Box', width: 28 },
-  {
-    key: 'datenow',
-    header: 'DateNow',
-    width: 22,
-    numFmt: 'dd/mm/yyyy hh:mm:ss',
-  },
-  { key: 'userId', header: 'UserId', width: 18 },
-  { key: 'method', header: 'Method', width: 12 },
-])
 
 const SWIPE_WIDTH = 80
 const openSwipeId = ref<string | null>(null)
@@ -72,21 +53,27 @@ let touchStartX = 0
 let touchStartY = 0
 let touchStartOffset = 0
 let ignoreClick = false
+let suppressSwipeUntil = 0
 
 function showNotice(message: string) {
+  clearSwipeState()
   noticeMessage.value = message
   noticeOpen.value = true
 }
 
 async function tryAutoArchive() {
   try {
-    const archived = await maybeArchiveScansIfFull()
-    if (!archived) return
+    const result = await maybeArchiveScansIfFull(network.online)
+    if (!result) return
+    if (result.kind === 'needsOnline') {
+      showNotice(
+        t('scan.autoArchiveNeedOnline', { n: result.total, max: SCAN_ARCHIVE_THRESHOLD }),
+      )
+      return
+    }
     sessionItems.value = []
     await refreshCounts()
-    showNotice(
-      `${t('scan.autoArchiveDone', { n: archived.n })}\n${t('sync.exported', { file: archived.filename })}`,
-    )
+    showNotice(t('scan.autoArchiveDone', { n: result.n }))
   } catch (err) {
     showNotice(err instanceof Error ? err.message : String(err))
   }
@@ -96,7 +83,6 @@ async function tryAutoArchive() {
 const SESSION_LIST_CAP = 200
 
 const locationLocked = computed(() => Boolean(activeLocation.value.trim()))
-const savedCount = computed(() => sessionItems.value.length)
 
 function formatBadgeCount(n: number): string | undefined {
   if (n <= 0) return undefined
@@ -137,8 +123,7 @@ async function lockLocation(raw: string) {
   activeLocation.value = code
   locationDraft.value = code
   sessionItems.value = await listScanLogsByLocation(code, SESSION_LIST_CAP)
-  openSwipeId.value = null
-  dragOffset.value = 0
+  clearSwipeState()
   await refreshCounts()
 }
 
@@ -148,8 +133,7 @@ function changeLocation() {
   boxDraft.value = ''
   sessionItems.value = []
   locationTotal.value = 0
-  openSwipeId.value = null
-  dragOffset.value = 0
+  clearSwipeState()
 }
 
 async function saveBox(value: string, kind: ScanKind, format: string): Promise<ScanLog | null> {
@@ -185,32 +169,35 @@ async function saveBox(value: string, kind: ScanKind, format: string): Promise<S
   sessionItems.value.unshift(item)
   trimSessionList()
   boxDraft.value = ''
-  openSwipeId.value = null
-  dragOffset.value = 0
+  clearSwipeState()
   await refreshCounts()
+  if (network.online) {
+    try {
+      await commandScan(toScanApiItem(item, 0))
+      await finalizeSyncedScans([item])
+      const row = sessionItems.value.find((x) => x.id === item.id)
+      if (row) row.synced = true
+      await refreshCounts()
+    } catch {
+      // keep pending for batch sync
+    }
+  }
   await tryAutoArchive()
   return item
 }
 
 async function saveLocationManual() {
+  clearSwipeState()
   await lockLocation(locationDraft.value)
 }
 
 async function saveBoxManual() {
-  const item = await saveBox(boxDraft.value, 'manual', 'MANUAL')
-  if (!item || !network.online) return
-  try {
-    await createScan(toScanApiItem(item))
-    await markScansSynced([item.id])
-    const row = sessionItems.value.find((x) => x.id === item.id)
-    if (row) row.synced = true
-    await refreshCounts()
-  } catch {
-    // keep pending for batch sync
-  }
+  clearSwipeState()
+  await saveBox(boxDraft.value, 'manual', 'MANUAL')
 }
 
 async function syncPending() {
+  clearSwipeState()
   if (syncing.value) return
   if (!network.online) {
     showNotice(t('sync.offline'))
@@ -222,12 +209,13 @@ async function syncPending() {
     for (; ;) {
       const rows = await listUnsyncedScansPage(SYNC_CHUNK, 0)
       if (!rows.length) break
-      await syncScans(rows.map(toScanApiItem))
-      await markScansSynced(rows.map((row) => row.id))
-      const idSet = new Set(rows.map((row) => row.id))
+      await commandScans(rows.map((row) => toScanApiItem(row, row.status)))
+      await finalizeSyncedScans(rows)
+      const idSet = new Set(rows.filter((row) => row.status !== -1).map((row) => row.id))
       for (const item of sessionItems.value) {
         if (idSet.has(item.id)) item.synced = true
       }
+      sessionItems.value = sessionItems.value.filter((item) => !rows.some((r) => r.id === item.id && r.status === -1))
       synced += rows.length
     }
     await refreshCounts()
@@ -250,16 +238,26 @@ function rowBorderClass(id: string, index: number) {
   return index === 0 ? 'border-[#7dcea0]' : 'border-line'
 }
 
+function clearSwipeState() {
+  openSwipeId.value = null
+  dragOffset.value = 0
+  draggingId.value = null
+}
+
+function suppressSwipeBriefly() {
+  clearSwipeState()
+  suppressSwipeUntil = Date.now() + 400
+}
+
 function onTouchStart(e: TouchEvent, id: string) {
+  if (Date.now() < suppressSwipeUntil) return
   const touch = e.touches[0]
   if (!touch) return
+  if (openSwipeId.value && openSwipeId.value !== id) clearSwipeState()
   touchStartX = touch.clientX
   touchStartY = touch.clientY
   touchStartOffset = openSwipeId.value === id ? -SWIPE_WIDTH : 0
   draggingId.value = id
-  if (openSwipeId.value && openSwipeId.value !== id) {
-    openSwipeId.value = null
-  }
   dragOffset.value = touchStartOffset
 }
 
@@ -296,18 +294,28 @@ function onTouchEnd() {
   }
 }
 
-function closeSwipe() {
-  openSwipeId.value = null
-  dragOffset.value = 0
-}
-
 function onRowClick(id: string) {
   if (ignoreClick) return
-  if (openSwipeId.value === id) closeSwipe()
-  else if (openSwipeId.value) closeSwipe()
+  if (openSwipeId.value) clearSwipeState()
+}
+
+function onPanelPointerDown(e: PointerEvent) {
+  if (!openSwipeId.value) return
+  const target = e.target
+  if (!(target instanceof Element)) {
+    clearSwipeState()
+    return
+  }
+  const row = target.closest('[data-swipe-id]')
+  if (row?.getAttribute('data-swipe-id') === openSwipeId.value) return
+  clearSwipeState()
 }
 
 function askDelete(row: ScanLog) {
+  clearSwipeState()
+  const finishSwipe = () => {
+    void nextTick(() => suppressSwipeBriefly())
+  }
   confirm.require({
     header: t('scan.deleteTitle'),
     message: t('scan.deleteMessage', { value: row.value }),
@@ -328,17 +336,22 @@ function askDelete(row: ScanLog) {
     },
     accept: async () => {
       try {
-        await deleteScanLog(row.id)
+        if (network.online) {
+          await commandScan(toScanApiItem(row, -1))
+          await deleteScanLog(row.id)
+        } else {
+          await markScanDeleted(row.id)
+        }
         sessionItems.value = sessionItems.value.filter((x) => x.id !== row.id)
         await refreshCounts()
       } catch (err) {
         showNotice(err instanceof Error ? err.message : t('scan.deleteError'))
       } finally {
-        closeSwipe()
+        finishSwipe()
       }
     },
-    reject: () => closeSwipe(),
-    onHide: () => closeSwipe(),
+    reject: finishSwipe,
+    onHide: finishSwipe,
   })
 }
 
@@ -353,8 +366,9 @@ useBarcodeWedge(async (value) => {
 </script>
 
 <template>
-  <div class="page-fill gap-2 overflow-hidden" :style="{ paddingBottom: 'var(--safe-bottom)' }">
-    <div class="page-fill-panel rounded-2xl border border-line bg-white p-3 shadow-panel">
+  <div class="page-fill gap-2 overflow-hidden">
+    <div class="page-fill-panel rounded-2xl border border-line bg-white p-3 shadow-panel"
+      @pointerdown.capture="onPanelPointerDown">
       <div class="flex shrink-0 flex-col gap-2">
         <div class="flex items-center gap-2">
           <FloatLabel class="min-w-0 flex-1">
@@ -397,28 +411,26 @@ useBarcodeWedge(async (value) => {
       </div>
 
       <div v-if="sessionItems.length" class="mt-3 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto"
-        @scroll.passive="closeSwipe">
-        <div v-for="(item, index) in sessionItems" :key="item.id"
+        @scroll.passive="clearSwipeState">
+        <div v-for="(item, index) in sessionItems" :key="item.id" :data-swipe-id="item.id"
           class="relative shrink-0 overflow-hidden rounded-2xl border" :class="rowBorderClass(item.id, index)">
-          <div class="flex w-[calc(100%+5rem)] touch-pan-y" :style="{
+          <button v-show="rowOffset(item.id) < 0" type="button"
+            class="absolute inset-y-0 right-0 z-0 m-0 flex w-20 flex-col items-center justify-center gap-0.5 border-0 bg-[#e74c3c] p-0 text-xs font-semibold text-white"
+            :aria-label="t('common.delete')" @click.stop="askDelete(item)">
+            <i class="pi pi-trash text-base" aria-hidden="true" />
+          </button>
+          <div class="relative z-10 w-full touch-pan-y p-2.5" :class="index === 0 ? 'bg-[#d5f5e3]' : 'bg-white'" :style="{
             transform: `translateX(${rowOffset(item.id)}px)`,
             transition: draggingId === item.id ? 'none' : 'transform 0.18s ease',
           }" @touchstart.passive="onTouchStart($event, item.id)" @touchmove="onTouchMove" @touchend="onTouchEnd"
             @touchcancel="onTouchEnd" @click="onRowClick(item.id)">
-            <div class="w-[calc(100%-5rem)] shrink-0 p-2.5" :class="index === 0 ? 'bg-[#d5f5e3]' : 'bg-white'">
-              <div class="flex items-center gap-2">
-                <span class="shrink-0 text-sm font-semibold text-muted">#{{ sessionItems.length - index }}</span>
-                <div class="flex min-w-0 flex-1 items-center justify-between gap-2">
-                  <span class="min-w-0 break-all font-medium">{{ item.value }}</span>
-                  <span class="shrink-0 text-sm text-muted">{{ dayjs(item.createdAt).format('HH:mm:ss') }}</span>
-                </div>
+            <div class="flex items-center gap-2">
+              <span class="shrink-0 text-sm font-semibold text-muted">#{{ sessionItems.length - index }}</span>
+              <div class="flex min-w-0 flex-1 items-center justify-between gap-2">
+                <span class="min-w-0 break-all font-medium">{{ item.value }}</span>
+                <span class="shrink-0 text-sm text-muted">{{ dayjs(item.createdAt).format('HH:mm:ss') }}</span>
               </div>
             </div>
-            <button type="button"
-              class="m-0 flex w-20 shrink-0 flex-col items-center justify-center gap-0.5 border-0 bg-[#e74c3c] p-0 text-xs font-semibold text-white"
-              :aria-label="t('common.delete')" @click.stop="askDelete(item)">
-              <i class="pi pi-trash text-base" aria-hidden="true" />
-            </button>
           </div>
         </div>
       </div>
@@ -429,15 +441,6 @@ useBarcodeWedge(async (value) => {
         <p class="m-0 font-semibold text-ink">{{ t('scan.emptyTitle') }}</p>
       </div>
 
-      <!-- <p class="mb-0 mt-2 shrink-0 text-sm text-muted">
-        {{
-          t('mobile.sessionFooter', {
-            session: savedCount,
-            shelf: locationTotal,
-            db: dbTotal,
-          })
-        }}
-      </p> -->
     </div>
 
     <Dialog v-model:visible="noticeOpen" modal :closable="false" :header="t('scan.noticeTitle')"

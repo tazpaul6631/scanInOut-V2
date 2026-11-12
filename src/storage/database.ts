@@ -113,6 +113,14 @@ async function migrateSchema(fromVersion: number): Promise<void> {
     )
     await execute(`CREATE INDEX IF NOT EXISTS idx_scan_logs_synced ON scan_logs(synced)`)
   }
+  if (fromVersion < 5) {
+    await ensureColumn(
+      'scan_logs',
+      'status',
+      `ALTER TABLE scan_logs ADD COLUMN status INTEGER NOT NULL DEFAULT 0`,
+    )
+    await execute(`CREATE INDEX IF NOT EXISTS idx_scan_logs_status ON scan_logs(status)`)
+  }
 }
 
 async function applySchema(): Promise<void> {

@@ -52,6 +52,8 @@ export interface ScanLog {
   userCode: string | null
   userEmail: string | null
   createdAt: number
+  /** 0 = active scan, -1 = pending/confirmed delete */
+  status: number
   synced: boolean
 }
 
@@ -75,6 +77,8 @@ export interface Session {
   roleName?: string
   accessToken?: string
   refreshToken?: string
+  warehouse?: string
+  scanType?: string
 }
 
 export interface AppSettings {

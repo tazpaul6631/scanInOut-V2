@@ -7,6 +7,16 @@ export function formatDateTime(value: number | string | null | undefined): strin
   return dayjs(parsed).format('DD/MM/YYYY HH:mm:ss')
 }
 
+/** Device-local ISO with offset, e.g. 2026-11-12T10:51:43+07:00 */
+export function toLocalIso(value: number | string | Date): string {
+  return dayjs(value).format('YYYY-MM-DDTHH:mm:ssZ')
+}
+
+/** Local wall-clock stamp safe for filenames. */
+export function toLocalFileStamp(value: number | string | Date = Date.now()): string {
+  return dayjs(value).format('YYYY-MM-DDTHH-mm-ss')
+}
+
 /** ExcelJS serializes Date via UTC fields — shift so the file shows device local wall-clock time. */
 export function toExcelLocalDate(value: number | string | Date): Date {
   const d = value instanceof Date ? value : new Date(value)

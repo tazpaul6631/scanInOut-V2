@@ -3,6 +3,9 @@ import { appendScanLiveLog } from '@/services/scan-live-log'
 import type { ScanDirection, ScanKind, ScanLog } from '@/types'
 import { createId, now } from '@/utils/id'
 
+/** Active rows only (hide delete tombstones waiting for sync). */
+const NOT_DELETED = 'COALESCE(status, 0) != -1'
+
 interface ScanRow {
   id: string
   kind: ScanKind
@@ -14,6 +17,7 @@ interface ScanRow {
   user_email: string | null
   created_at: number
   synced: number | null
+  status: number | null
 }
 
 function mapScan(row: ScanRow): ScanLog {
@@ -27,6 +31,7 @@ function mapScan(row: ScanRow): ScanLog {
     userCode: row.user_code,
     userEmail: row.user_email,
     createdAt: row.created_at,
+    status: Number(row.status ?? 0),
     synced: Number(row.synced ?? 0) === 1,
   }
 }
@@ -50,11 +55,12 @@ export async function addScanLog(input: {
     userCode: input.userCode?.trim() || null,
     userEmail: input.userEmail?.trim() || null,
     createdAt: now(),
+    status: 0,
     synced: false,
   }
   await run(
-    `INSERT INTO scan_logs (id, kind, value, format, direction, location, user_code, user_email, created_at, synced)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO scan_logs (id, kind, value, format, direction, location, user_code, user_email, created_at, synced, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       item.id,
       item.kind,
@@ -65,6 +71,7 @@ export async function addScanLog(input: {
       item.userCode,
       item.userEmail,
       item.createdAt,
+      0,
       0,
     ],
   )
@@ -89,7 +96,7 @@ export interface ScanLogPageOptions extends ScanLogFilter {
 }
 
 function buildScanFilter(filter: ScanLogFilter = {}): { where: string; params: Array<string | number | null> } {
-  const clauses: string[] = []
+  const clauses: string[] = [NOT_DELETED]
   const params: Array<string | number | null> = []
   const code = filter.code?.trim()
   const location = filter.location?.trim()
@@ -110,7 +117,7 @@ function buildScanFilter(filter: ScanLogFilter = {}): { where: string; params: A
     params.push(filter.dateTo)
   }
   return {
-    where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '',
+    where: `WHERE ${clauses.join(' AND ')}`,
     params,
   }
 }
@@ -119,17 +126,21 @@ function buildScanFilter(filter: ScanLogFilter = {}): { where: string; params: A
 export async function listScanLogs(limit?: number): Promise<ScanLog[]> {
   if (limit != null && limit > 0) {
     const rows = await query<ScanRow>(
-      `SELECT * FROM scan_logs ORDER BY created_at DESC LIMIT ?`,
+      `SELECT * FROM scan_logs WHERE ${NOT_DELETED} ORDER BY created_at DESC LIMIT ?`,
       [limit],
     )
     return rows.map(mapScan)
   }
-  const rows = await query<ScanRow>(`SELECT * FROM scan_logs ORDER BY created_at DESC`)
+  const rows = await query<ScanRow>(
+    `SELECT * FROM scan_logs WHERE ${NOT_DELETED} ORDER BY created_at DESC`,
+  )
   return rows.map(mapScan)
 }
 
 export async function countScans(): Promise<number> {
-  const rows = await query<{ c: number }>('SELECT COUNT(*) as c FROM scan_logs')
+  const rows = await query<{ c: number }>(
+    `SELECT COUNT(*) as c FROM scan_logs WHERE ${NOT_DELETED}`,
+  )
   return Number(rows[0]?.c ?? 0)
 }
 
@@ -161,6 +172,23 @@ export async function markScansSynced(ids: string[]): Promise<void> {
   await run(`UPDATE scan_logs SET synced = 1 WHERE id IN (${placeholders})`, unique)
 }
 
+/** Soft-delete for offline: status=-1, re-queue sync. */
+export async function markScanDeleted(id: string): Promise<void> {
+  await run(`UPDATE scan_logs SET status = -1, synced = 0 WHERE id = ?`, [id])
+}
+
+/**
+ * After a successful command sync batch: hard-delete tombstones, mark active rows synced.
+ */
+export async function finalizeSyncedScans(rows: ScanLog[]): Promise<void> {
+  const deleteIds = rows.filter((row) => row.status === -1).map((row) => row.id)
+  const keepIds = rows.filter((row) => row.status !== -1).map((row) => row.id)
+  await markScansSynced(keepIds)
+  if (!deleteIds.length) return
+  const placeholders = deleteIds.map(() => '?').join(', ')
+  await run(`DELETE FROM scan_logs WHERE id IN (${placeholders})`, deleteIds)
+}
+
 export async function countScansFiltered(filter: ScanLogFilter = {}): Promise<number> {
   const { where, params } = buildScanFilter(filter)
   const rows = await query<{ c: number }>(`SELECT COUNT(*) as c FROM scan_logs ${where}`, params)
@@ -184,7 +212,7 @@ export async function countScansByLocation(location: string): Promise<number> {
   const loc = location.trim()
   if (!loc) return 0
   const rows = await query<{ c: number }>(
-    'SELECT COUNT(*) as c FROM scan_logs WHERE location = ?',
+    `SELECT COUNT(*) as c FROM scan_logs WHERE location = ? AND ${NOT_DELETED}`,
     [loc],
   )
   return Number(rows[0]?.c ?? 0)
@@ -196,13 +224,13 @@ export async function listScanLogsByLocation(location: string, limit?: number): 
   if (!loc) return []
   if (limit != null && limit > 0) {
     const rows = await query<ScanRow>(
-      `SELECT * FROM scan_logs WHERE location = ? ORDER BY created_at DESC LIMIT ?`,
+      `SELECT * FROM scan_logs WHERE location = ? AND ${NOT_DELETED} ORDER BY created_at DESC LIMIT ?`,
       [loc, limit],
     )
     return rows.map(mapScan)
   }
   const rows = await query<ScanRow>(
-    `SELECT * FROM scan_logs WHERE location = ? ORDER BY created_at DESC`,
+    `SELECT * FROM scan_logs WHERE location = ? AND ${NOT_DELETED} ORDER BY created_at DESC`,
     [loc],
   )
   return rows.map(mapScan)
@@ -216,12 +244,12 @@ export async function deleteAllScanLogs(): Promise<void> {
   await run(`DELETE FROM scan_logs`)
 }
 
-/** Box already saved (any location). Dedup is by value only. */
+/** Box already saved (any location). Dedup is by value only; ignores delete tombstones. */
 export async function findScanByValue(value: string): Promise<ScanLog | null> {
   const code = value.trim()
   if (!code) return null
   const rows = await query<ScanRow>(
-    `SELECT * FROM scan_logs WHERE value = ? ORDER BY created_at DESC LIMIT 1`,
+    `SELECT * FROM scan_logs WHERE value = ? AND ${NOT_DELETED} ORDER BY created_at DESC LIMIT 1`,
     [code],
   )
   const row = rows[0]
@@ -252,22 +280,30 @@ function userKeySql(): string {
 /** SQL aggregates for Excel TongKet — no full-table JS scan. */
 export async function summarizeScanLogs(): Promise<ScanSummary> {
   const [totalRows, locationCountRows, userCountRows, byLocationRows, byUserRows] = await Promise.all([
-    query<{ c: number }>('SELECT COUNT(*) as c FROM scan_logs'),
+    query<{ c: number }>(`SELECT COUNT(*) as c FROM scan_logs WHERE ${NOT_DELETED}`),
     query<{ c: number }>(
-      `SELECT COUNT(*) as c FROM (SELECT DISTINCT TRIM(location) AS loc FROM scan_logs WHERE TRIM(COALESCE(location, '')) != '')`,
+      `SELECT COUNT(*) as c FROM (
+         SELECT DISTINCT TRIM(location) AS loc FROM scan_logs
+         WHERE ${NOT_DELETED} AND TRIM(COALESCE(location, '')) != ''
+       )`,
     ),
     query<{ c: number }>(
-      `SELECT COUNT(*) as c FROM (SELECT DISTINCT ${userKeySql()} AS uid FROM scan_logs WHERE ${userKeySql()} != '')`,
+      `SELECT COUNT(*) as c FROM (
+         SELECT DISTINCT ${userKeySql()} AS uid FROM scan_logs
+         WHERE ${NOT_DELETED} AND ${userKeySql()} != ''
+       )`,
     ),
     query<{ key: string; c: number }>(
       `SELECT TRIM(location) AS key, COUNT(*) AS c
        FROM scan_logs
+       WHERE ${NOT_DELETED}
        GROUP BY TRIM(location)
        ORDER BY c DESC, key ASC`,
     ),
     query<{ key: string; c: number }>(
       `SELECT ${userKeySql()} AS key, COUNT(*) AS c
        FROM scan_logs
+       WHERE ${NOT_DELETED}
        GROUP BY ${userKeySql()}
        ORDER BY c DESC, key ASC`,
     ),

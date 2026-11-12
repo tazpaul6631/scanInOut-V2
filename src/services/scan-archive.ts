@@ -1,75 +1,107 @@
-import { exportCsvPaged, type ExportColumn } from '@/services/export'
+import {
+  exportCsvPaged,
+  exportScanWorkbookPaged,
+} from '@/services/export'
+import { SCAN_EXPORT_COLUMNS, mapScanExportRow } from '@/services/scan-export-format'
+import { commandScans, toScanApiItem } from '@/services/api/scan'
 import {
   countScans,
   deleteAllScanLogs,
+  finalizeSyncedScans,
   listScanLogsPage,
+  listUnsyncedScansPage,
+  summarizeScanLogs,
 } from '@/services/repositories/scans'
-import { formatDateTime } from '@/utils/format'
-import type { ScanLog } from '@/types'
+import { toLocalFileStamp } from '@/utils/format'
 
-export const SCAN_ARCHIVE_THRESHOLD = 15
+export const SCAN_ARCHIVE_THRESHOLD = 5000
 
 const EXPORT_PAGE_SIZE = 1000
-
-const exportColumns: ExportColumn[] = [
-  { key: 'index', header: '#', width: 5 },
-  { key: 'location', header: 'Location', width: 16 },
-  { key: 'barcode', header: 'Box', width: 28 },
-  { key: 'datenow', header: 'DateNow', width: 22 },
-  { key: 'userId', header: 'UserId', width: 18 },
-  { key: 'method', header: 'Method', width: 12 },
-]
+const SYNC_CHUNK = 500
 
 let archiving = false
 
-function mapExportRow(row: ScanLog, index: number) {
-  return {
-    index,
-    location: row.location,
-    barcode: row.value,
-    datenow: formatDateTime(row.createdAt),
-    userId: row.userCode?.trim() || row.userEmail?.trim() || '',
-    method: row.kind === 'manual' ? 'Input' : 'Laser',
+export type ScanArchiveNeedsOnline = {
+  kind: 'needsOnline'
+  total: number
+}
+
+export type ScanArchiveDone = {
+  kind: 'archived'
+  n: number
+  csvFilename: string
+  xlsxFilename: string
+}
+
+export type ScanArchiveResult = ScanArchiveNeedsOnline | ScanArchiveDone
+
+async function syncAllUnsynced(): Promise<void> {
+  for (; ;) {
+    const rows = await listUnsyncedScansPage(SYNC_CHUNK, 0)
+    if (!rows.length) break
+    await commandScans(rows.map((row) => toScanApiItem(row, row.status)))
+    await finalizeSyncedScans(rows)
   }
 }
 
-export type ScanArchiveResult = {
-  n: number
-  filename: string
-}
-
 /**
- * If SQLite has >= SCAN_ARCHIVE_THRESHOLD rows: export full CSV, delete all, return result.
+ * If SQLite has >= SCAN_ARCHIVE_THRESHOLD rows:
+ * - offline → needsOnline (no delete)
+ * - online → sync all unsynced (incl. latest), export CSV+XLSX, then delete
  * Concurrent callers get null while a run is in progress.
  */
-export async function maybeArchiveScansIfFull(): Promise<ScanArchiveResult | null> {
+export async function maybeArchiveScansIfFull(
+  online: boolean,
+): Promise<ScanArchiveResult | null> {
   if (archiving) return null
   const total = await countScans()
   if (total < SCAN_ARCHIVE_THRESHOLD) return null
+  if (!online) return { kind: 'needsOnline', total }
 
   archiving = true
   try {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    const filename = `scan-logs-auto-${stamp}.csv`
-    let index = 0
-    const n = await exportCsvPaged(
-      filename,
-      exportColumns,
+    await syncAllUnsynced()
+
+    const stamp = toLocalFileStamp()
+    const csvFilename = `scan-logs-auto-${stamp}.csv`
+    const xlsxFilename = `scan-logs-auto-${stamp}.xlsx`
+    const summary = await summarizeScanLogs()
+
+    let csvIndex = 0
+    const csvN = await exportCsvPaged(
+      csvFilename,
+      SCAN_EXPORT_COLUMNS,
       async (offset, limit) => {
-        const rows = await listScanLogsPage({
-          limit,
-          offset,
-          order: 'asc',
-        })
+        const rows = await listScanLogsPage({ limit, offset, order: 'asc' })
         return rows.map((row) => {
-          index += 1
-          return mapExportRow(row, index)
+          csvIndex += 1
+          return mapScanExportRow(row, csvIndex)
         })
       },
       EXPORT_PAGE_SIZE,
     )
+
+    let xlsxIndex = 0
+    const xlsxN = await exportScanWorkbookPaged(
+      xlsxFilename,
+      SCAN_EXPORT_COLUMNS,
+      summary,
+      async (offset, limit) => {
+        const rows = await listScanLogsPage({ limit, offset, order: 'asc' })
+        return rows.map((row) => {
+          xlsxIndex += 1
+          return mapScanExportRow(row, xlsxIndex)
+        })
+      },
+      EXPORT_PAGE_SIZE,
+    )
+
+    if (csvN !== xlsxN) {
+      throw new Error(`Archive row mismatch: CSV=${csvN}, XLSX=${xlsxN}`)
+    }
+
     await deleteAllScanLogs()
-    return { n, filename }
+    return { kind: 'archived', n: csvN, csvFilename, xlsxFilename }
   } finally {
     archiving = false
   }

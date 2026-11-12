@@ -12,3 +12,4 @@ export type {
   ViewUser,
 } from './user'
 export type { ViewRole } from './role'
+export type { ViewCategoryBase } from './category'

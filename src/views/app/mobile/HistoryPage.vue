@@ -19,14 +19,17 @@ import {
   summarizeScanLogs,
   type ScanLogFilter,
 } from '@/services/repositories/scans'
-import { maybeArchiveScansIfFull } from '@/services/scan-archive'
-import { exportCsvPaged, exportScanWorkbookPaged, type ExportColumn } from '@/services/export'
+import { maybeArchiveScansIfFull, SCAN_ARCHIVE_THRESHOLD } from '@/services/scan-archive'
+import { exportCsvPaged, exportScanWorkbookPaged } from '@/services/export'
+import { SCAN_EXPORT_COLUMNS, mapScanExportRow } from '@/services/scan-export-format'
 import dayjs from 'dayjs'
-import { formatDateTime, toExcelLocalDate } from '@/utils/format'
+import { toLocalFileStamp } from '@/utils/format'
+import { useNetworkStore } from '@/stores/network'
 import type { ScanLog } from '@/types'
 
 const { t } = useI18n()
 const confirm = useConfirm()
+const network = useNetworkStore()
 const pageRows = ref<ScanLog[]>([])
 const dbTotal = ref(0)
 const filteredTotal = ref(0)
@@ -49,20 +52,6 @@ function showNotice(summary: string, detail?: string) {
   noticeMessage.value = detail ? `${summary}\n${detail}` : summary
   noticeOpen.value = true
 }
-
-const exportColumns = computed<ExportColumn[]>(() => [
-  { key: 'index', header: '#', width: 5 },
-  { key: 'location', header: 'Location', width: 16 },
-  { key: 'barcode', header: 'Box', width: 28 },
-  {
-    key: 'datenow',
-    header: 'DateNow',
-    width: 22,
-    numFmt: 'dd/mm/yyyy hh:mm:ss',
-  },
-  { key: 'userId', header: 'UserId', width: 18 },
-  { key: 'method', header: 'Method', width: 12 },
-])
 
 function userLabel(row: ScanLog) {
   return row.userCode?.trim() || row.userEmail?.trim() || '—'
@@ -130,14 +119,15 @@ watch(page, () => {
 
 async function tryAutoArchive() {
   try {
-    const archived = await maybeArchiveScansIfFull()
-    if (!archived) return
+    const result = await maybeArchiveScansIfFull(network.online)
+    if (!result) return
+    if (result.kind === 'needsOnline') {
+      showNotice(t('scan.autoArchiveNeedOnline', { n: result.total, max: SCAN_ARCHIVE_THRESHOLD }))
+      return
+    }
     page.value = 0
     await loadPage()
-    showNotice(
-      t('scan.autoArchiveDone', { n: archived.n }),
-      t('sync.exported', { file: archived.filename }),
-    )
+    showNotice(t('scan.autoArchiveDone', { n: result.n }))
   } catch (err) {
     showNotice(err instanceof Error ? err.message : String(err))
   }
@@ -180,20 +170,9 @@ function clearFilter() {
   else void loadPage()
 }
 
-function mapExportRow(row: ScanLog, index: number, asExcelDate: boolean) {
-  return {
-    index,
-    location: row.location,
-    barcode: row.value,
-    datenow: asExcelDate ? toExcelLocalDate(row.createdAt) : formatDateTime(row.createdAt),
-    userId: row.userCode?.trim() || row.userEmail?.trim() || '',
-    method: row.kind === 'manual' ? 'Input' : 'Laser',
-  }
-}
-
 async function exportAllCsv(filename: string): Promise<number> {
   let index = 0
-  return exportCsvPaged(filename, exportColumns.value, async (offset, limit) => {
+  return exportCsvPaged(filename, SCAN_EXPORT_COLUMNS, async (offset, limit) => {
     const rows = await listScanLogsPage({
       limit,
       offset,
@@ -201,7 +180,7 @@ async function exportAllCsv(filename: string): Promise<number> {
     })
     return rows.map((row) => {
       index += 1
-      return mapExportRow(row, index, false)
+      return mapScanExportRow(row, index)
     })
   }, EXPORT_PAGE_SIZE)
 }
@@ -211,7 +190,7 @@ async function exportAllXlsx(filename: string): Promise<number> {
   let index = 0
   return exportScanWorkbookPaged(
     filename,
-    exportColumns.value,
+    SCAN_EXPORT_COLUMNS,
     summary,
     async (offset, limit) => {
       const rows = await listScanLogsPage({
@@ -221,7 +200,7 @@ async function exportAllXlsx(filename: string): Promise<number> {
       })
       return rows.map((row) => {
         index += 1
-        return mapExportRow(row, index, true)
+        return mapScanExportRow(row, index)
       })
     },
     EXPORT_PAGE_SIZE,
@@ -236,7 +215,7 @@ async function doExport(kind: 'csv' | 'xlsx') {
       showNotice(t('scan.emptyTitle'))
       return
     }
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const stamp = toLocalFileStamp()
     if (kind === 'csv') {
       const filename = `scan-logs-${stamp}.csv`
       const n = await exportAllCsv(filename)
@@ -284,7 +263,7 @@ function deleteAll() {
           showNotice(t('scan.emptyTitle'))
           return
         }
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+        const stamp = toLocalFileStamp()
         // CSV paged backup — safer than full XLSX at 100k+
         const filename = `scan-logs-backup-${stamp}.csv`
         const n = await exportAllCsv(filename)
@@ -306,12 +285,19 @@ function deleteAll() {
 </script>
 
 <template>
-  <div class="page-fill gap-3 overflow-hidden" :style="{ paddingBottom: 'var(--safe-bottom)' }">
+  <div class="page-fill gap-2 overflow-hidden">
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap gap-2">
-        <Button icon="pi pi-file-export" size="large" :loading="exporting" @click="doExport('csv')" />
+        <!-- <Button icon="pi pi-file-export" size="large" :loading="exporting" @click="doExport('csv')" /> -->
         <Button icon="pi pi-file-excel" size="large" :loading="exporting" @click="doExport('xlsx')" />
-        <Button icon="pi pi-info-circle" size="large" severity="help" outlined @click="usbGuideOpen = true" />
+        <!-- <Button icon="pi pi-info-circle" size="large" severity="help" outlined @click="usbGuideOpen = true" /> -->
+      </div>
+      <div v-if="dbTotal"
+        class="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[#7dcea0] bg-[#d5f5e3] px-3 py-1.5">
+        <p class="m-0 text-sm font-semibold text-emerald-800 flex items-center gap-1">
+          <span class="tabular-nums">{{ t('scan.totalCount', { n: dbTotal }) }}</span>
+          <i class="pi pi-box text-base text-emerald-700" aria-hidden="true" />
+        </p>
       </div>
       <!-- <div class="flex flex-wrap gap-2 justify-end">
         <Button icon="pi pi-trash" size="large" severity="danger" outlined :loading="exporting"
@@ -351,20 +337,22 @@ function deleteAll() {
           :total-records="filteredTotal" :first="page * pageSize" :paginator-template="paginatorTemplate"
           :current-page-report-template="pageReport" scrollable scroll-height="flex" striped-rows row-hover
           @page="onPage">
-          <Column header="#" header-class="scan-col-tight-start" body-class="scan-col-tight-start">
+          <Column header="#" header-class="scan-col-tight-start scan-col-tight-top" body-class="scan-col-tight-start">
             <template #body="{ index }">{{ rowIndex(index) }}</template>
           </Column>
-          <Column :header="t('scan.location')" header-class="scan-col-tight" body-class="scan-col-tight">
+          <Column :header="t('scan.location')" header-class="scan-col-tight scan-col-tight-top"
+            body-class="scan-col-tight">
             <template #body="{ data }">
               <span class="break-all font-medium text-ink">{{ data.location || '—' }}</span>
             </template>
           </Column>
-          <Column :header="t('scan.code')">
+          <Column :header="t('scan.code')" header-class="scan-col-tight-top">
             <template #body="{ data }">
               <span class="break-all font-medium text-ink">{{ data.value }}</span>
             </template>
           </Column>
-          <Column :header="t('scan.dateNow')" header-class="scan-col-tight" body-class="scan-col-tight">
+          <Column :header="t('scan.dateNow')" header-class="scan-col-tight scan-col-tight-top"
+            body-class="scan-col-tight">
             <template #body="{ data }">
               <div class="flex flex-col whitespace-nowrap leading-tight text-muted">
                 <span>{{ dayjs(data.createdAt).format('DD/MM/YYYY') }}</span>
@@ -372,7 +360,8 @@ function deleteAll() {
               </div>
             </template>
           </Column>
-          <Column :header="t('scan.user')" header-class="scan-col-tight-end" body-class="scan-col-tight-end">
+          <Column :header="t('scan.user')" header-class="scan-col-tight-end scan-col-tight-top"
+            body-class="scan-col-tight-end">
             <template #body="{ data }">
               <span class="break-all text-muted">{{ userLabel(data) }}</span>
             </template>

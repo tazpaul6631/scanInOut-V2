@@ -8,6 +8,7 @@ import {
   loadSession,
   saveSession,
 } from '@/services/repositories/session'
+import { toLocalIso } from '@/utils/format'
 
 function sessionFromUser(user: ViewValidateUser): Session | null {
   const email = user.email?.trim()
@@ -41,7 +42,7 @@ export const useAuthStore = defineStore('auth', () => {
     const res = await userValidate({
       email: email.trim(),
       password,
-      loginAt: new Date().toISOString(),
+      loginAt: toLocalIso(Date.now()),
     })
     if (!res.success || !res.data) return res
     const next = sessionFromUser(res.data)
@@ -53,13 +54,18 @@ export const useAuthStore = defineStore('auth', () => {
     return res
   }
 
-  async function loginLocal(identifier: string): Promise<boolean> {
+  async function loginLocal(
+    identifier: string,
+    options?: { warehouse?: string; scanType?: string },
+  ): Promise<boolean> {
     const value = identifier.trim()
     if (!value) return false
     const next: Session = {
       email: value,
       code: value,
       loggedInAt: Date.now(),
+      warehouse: options?.warehouse?.trim() || undefined,
+      scanType: options?.scanType?.trim() || undefined,
     }
     await saveSession(next)
     session.value = next

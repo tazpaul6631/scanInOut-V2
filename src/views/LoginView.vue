@@ -7,6 +7,7 @@ import { toTypedSchema } from '@vee-validate/zod'
 import InputText from '@/components/ui/AppInputText.vue'
 import Password from '@/components/ui/AppPassword.vue'
 import FloatLabel from '@/components/ui/AppFloatLabel.vue'
+import Select from '@/components/ui/AppSelect.vue'
 import Button from '@/components/ui/AppButton.vue'
 import Message from '@/components/ui/AppMessage.vue'
 import { createLoginSchema } from '@/schemas/login'
@@ -16,7 +17,9 @@ import { detectDeviceShell, homePathForShell, type DeviceShell } from '@/adapter
 import { startNfcScan, stopNfcScan } from '@/adapters/nfc'
 import { useBarcodeWedge } from '@/composables/useBarcodeWedge'
 import { useAuthStore } from '@/stores/auth'
+import { queryScanTypeBaseList, queryWarehouseBaseList } from '@/services/api/category'
 import { readApiFailure } from '@/services/api/error'
+import type { ViewCategoryBase } from '@/types/api'
 
 const NFC_SUPPRESS_MS = 1500
 /** Colon-separated NFC UID, e.g. aa:bb:cc:dd */
@@ -33,8 +36,62 @@ const submitting = ref(false)
 const credentialError = ref('')
 const shell = ref<DeviceShell>(detectDeviceShell())
 const isMobile = computed(() => shell.value === 'mobile')
+const warehouse = ref<string | null>(null)
+const scanType = ref<string | null>(null)
+const warehouseOptions = ref<{ label: string; value: string }[]>([])
+const typeOptions = ref<{ label: string; value: string }[]>([])
+const warehouseLoading = ref(false)
+const scanTypeLoading = ref(false)
+const selectAttempted = ref(false)
 const nfcSuppressUntil = ref(0)
 const nfcRecent = ref(new Set<string>())
+
+const mobileSelectsReady = computed(() => {
+  if (!isMobile.value) return true
+  return Boolean(warehouse.value?.trim() && scanType.value?.trim())
+})
+const warehouseInvalid = computed(
+  () => isMobile.value && selectAttempted.value && !warehouse.value?.trim(),
+)
+const scanTypeInvalid = computed(
+  () => isMobile.value && selectAttempted.value && !scanType.value?.trim(),
+)
+
+function toSelectOptions(rows: ViewCategoryBase[] | null | undefined) {
+  return (rows ?? [])
+    .map((row) => {
+      const name = row.name?.trim() || row.code?.trim()
+      if (!name) return null
+      return { label: name, value: name }
+    })
+    .filter((row): row is { label: string; value: string } => Boolean(row))
+}
+
+async function loadWarehouseOptions() {
+  if (warehouseLoading.value) return
+  warehouseLoading.value = true
+  try {
+    const res = await queryWarehouseBaseList()
+    warehouseOptions.value = toSelectOptions(res.data)
+  } catch {
+    warehouseOptions.value = []
+  } finally {
+    warehouseLoading.value = false
+  }
+}
+
+async function loadScanTypeOptions() {
+  if (scanTypeLoading.value) return
+  scanTypeLoading.value = true
+  try {
+    const res = await queryScanTypeBaseList()
+    typeOptions.value = toSelectOptions(res.data)
+  } catch {
+    typeOptions.value = []
+  } finally {
+    scanTypeLoading.value = false
+  }
+}
 
 function refreshShell() {
   shell.value = detectDeviceShell()
@@ -123,9 +180,22 @@ async function loginWithEmployeeCode(identifier: string) {
   if (!value || submitting.value) return
   employeeCode.value = value
   credentialError.value = ''
+  if (!mobileSelectsReady.value) {
+    selectAttempted.value = true
+    if (!warehouse.value?.trim()) {
+      credentialError.value = t('auth.warehouseRequired')
+      return
+    }
+    credentialError.value = t('auth.scanTypeRequired')
+    return
+  }
+  selectAttempted.value = false
   submitting.value = true
   try {
-    const ok = await auth.loginLocal(value)
+    const ok = await auth.loginLocal(value, {
+      warehouse: warehouse.value!,
+      scanType: scanType.value!,
+    })
     if (ok && auth.isLoggedIn) {
       await redirectAfterLogin()
       return
@@ -136,6 +206,11 @@ async function loginWithEmployeeCode(identifier: string) {
   } finally {
     submitting.value = false
   }
+}
+
+function onMobileSelectUpdate() {
+  clearCredentialError()
+  if (mobileSelectsReady.value) selectAttempted.value = false
 }
 
 useBarcodeWedge(
@@ -208,6 +283,26 @@ const submit = handleSubmit(async (values) => {
         </div>
       </div>
 
+      <div v-if="isMobile" class="grid gap-3.5">
+        <div>
+          <FloatLabel variant="on">
+            <Select input-id="login-warehouse" v-model="warehouse" :options="warehouseOptions" option-label="label"
+              option-value="value" class="w-full" :loading="warehouseLoading" :invalid="warehouseInvalid"
+              @show="loadWarehouseOptions" @update:model-value="onMobileSelectUpdate" />
+            <label for="login-warehouse">{{ t('auth.warehouse') }}</label>
+          </FloatLabel>
+          <small v-if="warehouseInvalid" class="p-error">{{ t('auth.warehouseRequired') }}</small>
+        </div>
+        <div>
+          <FloatLabel variant="on">
+            <Select input-id="login-scan-type" v-model="scanType" :options="typeOptions" option-label="label"
+              option-value="value" class="w-full" :loading="scanTypeLoading" :invalid="scanTypeInvalid"
+              @show="loadScanTypeOptions" @update:model-value="onMobileSelectUpdate" />
+            <label for="login-scan-type">{{ t('auth.scanType') }}</label>
+          </FloatLabel>
+          <small v-if="scanTypeInvalid" class="p-error">{{ t('auth.scanTypeRequired') }}</small>
+        </div>
+      </div>
       <div>
         <FloatLabel variant="on">
           <InputText id="employeeCode" v-model="employeeCode" v-bind="employeeCodeAttrs"
@@ -217,6 +312,7 @@ const submit = handleSubmit(async (values) => {
         </FloatLabel>
         <small class="p-error">{{ errors.employeeCode }}</small>
       </div>
+
       <div v-if="!isMobile">
         <FloatLabel variant="on">
           <Password input-id="password" v-model="password" v-bind="passwordAttrs" :invalid="Boolean(errors.password)"
@@ -229,7 +325,8 @@ const submit = handleSubmit(async (values) => {
       </div>
 
       <Message v-if="credentialError" severity="error">{{ credentialError }}</Message>
-      <Button type="submit" :label="t('auth.login')" size="large" icon="pi pi-sign-in" :loading="submitting" />
+      <Button type="submit" :label="t('auth.login')" size="large" icon="pi pi-sign-in" :loading="submitting"
+        :disabled="submitting || !mobileSelectsReady" />
       <p class="m-0 text-center text-xs text-muted">{{ t('footer.copyright') }}</p>
     </form>
   </div>

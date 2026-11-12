@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useForm } from 'vee-validate'
@@ -15,6 +15,12 @@ import { useToast } from 'primevue/usetoast'
 import { useAuthStore } from '@/stores/auth'
 import { useSyncStore } from '@/stores/sync'
 import { useNetworkStore } from '@/stores/network'
+import { commandScans, toScanApiItem } from '@/services/api/scan'
+import {
+  countUnsyncedScans,
+  finalizeSyncedScans,
+  listUnsyncedScansPage,
+} from '@/services/repositories/scans'
 import { personInitials } from '@/utils/format'
 import { createChangePasswordSchema } from '@/schemas/change-password'
 import type { MenuItem } from 'primevue/menuitem'
@@ -31,6 +37,18 @@ const network = useNetworkStore()
 const menu = ref<InstanceType<typeof Menu>>()
 const passwordOpen = ref(false)
 
+const SYNC_CHUNK = 500
+const LOGOUT_CONTINUE_SECONDS = 10
+
+type LogoutSyncPhase = 'syncing' | 'done' | 'error'
+const logoutSyncOpen = ref(false)
+const logoutSyncPhase = ref<LogoutSyncPhase>('syncing')
+const logoutSyncMessage = ref('')
+const logoutSyncedCount = ref(0)
+const logoutContinueLeft = ref(LOGOUT_CONTINUE_SECONDS)
+const logoutProceeding = ref(false)
+let logoutCountdownTimer: ReturnType<typeof setInterval> | null = null
+
 const displayName = computed(() => auth.session?.name?.trim() || auth.session?.email || t('app.name'))
 const displayCode = computed(() => auth.session?.code?.trim() || auth.session?.email || '—')
 const initials = computed(() => personInitials(displayName.value))
@@ -46,6 +64,7 @@ const items = computed<MenuItem[]>(() => [
   {
     label: t('auth.logout'),
     icon: 'pi pi-sign-out',
+    disabled: !network.online,
     class: 'user-menu-item user-menu-item-logout',
     command: logout,
   },
@@ -94,7 +113,72 @@ const submitPassword = handleSubmit(() => {
   closeChangePassword()
 })
 
-function logout() {
+function clearLogoutCountdown() {
+  if (logoutCountdownTimer) {
+    clearInterval(logoutCountdownTimer)
+    logoutCountdownTimer = null
+  }
+}
+
+function startLogoutCountdown() {
+  clearLogoutCountdown()
+  logoutContinueLeft.value = LOGOUT_CONTINUE_SECONDS
+  logoutCountdownTimer = setInterval(() => {
+    if (logoutContinueLeft.value <= 1) {
+      clearLogoutCountdown()
+      void finishLogout()
+      return
+    }
+    logoutContinueLeft.value -= 1
+  }, 1000)
+}
+
+async function finishLogout() {
+  if (logoutProceeding.value) return
+  logoutProceeding.value = true
+  clearLogoutCountdown()
+  logoutSyncOpen.value = false
+  try {
+    sync.stopFromApi()
+    await auth.logout()
+    await router.replace({ name: 'login' })
+  } finally {
+    logoutProceeding.value = false
+  }
+}
+
+function onLogoutSyncHide() {
+  clearLogoutCountdown()
+  // Closing without finishLogout keeps the session
+}
+
+async function runLogoutSync() {
+  logoutSyncPhase.value = 'syncing'
+  logoutSyncMessage.value = t('auth.logoutSyncing')
+  logoutSyncedCount.value = 0
+  logoutSyncOpen.value = true
+  try {
+    let synced = 0
+    for (; ;) {
+      const rows = await listUnsyncedScansPage(SYNC_CHUNK, 0)
+      if (!rows.length) break
+      await commandScans(rows.map((row) => toScanApiItem(row, row.status)))
+      await finalizeSyncedScans(rows)
+      synced += rows.length
+    }
+    logoutSyncedCount.value = synced
+    logoutSyncPhase.value = 'done'
+    logoutSyncMessage.value = synced
+      ? t('auth.logoutSyncDone', { n: synced })
+      : t('scan.syncEmpty')
+    startLogoutCountdown()
+  } catch (err) {
+    logoutSyncPhase.value = 'error'
+    logoutSyncMessage.value = err instanceof Error ? err.message : t('scan.syncError')
+  }
+}
+
+function confirmLogoutNoPending() {
   confirm.require({
     header: t('auth.logout'),
     message: t('auth.confirmLogout'),
@@ -113,16 +197,28 @@ function logout() {
       raised: false,
       ripple: false,
     },
-    accept: async () => {
-      sync.stopFromApi()
-      await auth.logout()
-      await router.replace({ name: 'login' })
+    accept: () => {
+      void finishLogout()
     },
-    reject: async () => {
+    reject: () => {
       confirm.close()
     },
   })
 }
+
+async function logout() {
+  if (!network.online) return
+  const unsynced = await countUnsyncedScans()
+  if (unsynced > 0) {
+    void runLogoutSync()
+    return
+  }
+  confirmLogoutNoPending()
+}
+
+onUnmounted(() => {
+  clearLogoutCountdown()
+})
 </script>
 
 <template>
@@ -140,6 +236,23 @@ function logout() {
     <i v-if="!compact" class="pi pi-angle-down user-chip-caret" aria-hidden="true" />
   </button>
   <Menu ref="menu" class="user-menu" :model="items" popup />
+
+  <Dialog v-model:visible="logoutSyncOpen" modal :header="t('auth.logoutSyncTitle')"
+    :style="{ width: 'min(420px, 96vw)' }" :closable="false" :dismissable-mask="false" @hide="onLogoutSyncHide">
+    <div class="mt-1.5 flex flex-col gap-3">
+      <p class="m-0 whitespace-pre-line text-lg leading-relaxed text-ink"><i v-if="logoutSyncPhase === 'syncing'"
+          class="pi pi-spin pi-spinner" aria-hidden="true" /> {{
+            logoutSyncMessage }}</p>
+      <div v-if="logoutSyncPhase === 'done'" class="flex justify-end">
+        <Button type="button" :label="t('auth.logoutContinue', { s: logoutContinueLeft })" icon="pi pi-sign-out"
+          :loading="logoutProceeding" @click="finishLogout" />
+      </div>
+      <div v-if="logoutSyncPhase === 'error'" class="flex justify-end">
+        <Button type="button" :label="t('common.cancel')" :raised="false" text @click="logoutSyncOpen = false" />
+      </div>
+    </div>
+  </Dialog>
+
   <Dialog v-model:visible="passwordOpen" modal :header="t('auth.changePassword')" :style="{ width: 'min(420px, 96vw)' }"
     @hide="closeChangePassword" :closable="false">
     <form class="mt-1.5 flex flex-col gap-2" @submit.prevent="submitPassword">

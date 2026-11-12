@@ -217,16 +217,16 @@ export async function exportScanWorkbookPaged(
   tongKet.addRow(['Users', summary.userCount])
 
   tongKet.addRow([])
-  tongKet.addRow(['By location', 'Boxes'])
+  tongKet.addRow(['By user', 'Boxes'])
   tongKet.getRow(tongKet.rowCount).font = { bold: true }
-  for (const row of summary.byLocation) {
+  for (const row of summary.byUser) {
     tongKet.addRow([row.key, row.count])
   }
 
   tongKet.addRow([])
-  tongKet.addRow(['By user', 'Boxes'])
+  tongKet.addRow(['By location', 'Boxes'])
   tongKet.getRow(tongKet.rowCount).font = { bold: true }
-  for (const row of summary.byUser) {
+  for (const row of summary.byLocation) {
     tongKet.addRow([row.key, row.count])
   }
 
@@ -236,16 +236,10 @@ export async function exportScanWorkbookPaged(
     key: c.key,
     width: c.width ?? 15,
   }))
-  chiTiet.getColumn(1).width = 7
-  chiTiet.getColumn(2).width = 10
-  chiTiet.getColumn(3).width = 20
-  chiTiet.getColumn(5).width = 14
-  chiTiet.getRow(1).font = { bold: true }
-  chiTiet.getRow(1).alignment = { vertical: 'middle' }
-  detailColumns.forEach((c, index) => {
-    if (!c.numFmt) return
-    chiTiet.getColumn(index + 1).numFmt = c.numFmt
-  })
+  const headerRow = chiTiet.getRow(1)
+  headerRow.font = { bold: true, color: { argb: 'FFC00000' } }
+  headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+  headerRow.height = 45
 
   let offset = 0
   let total = 0
@@ -253,7 +247,8 @@ export async function exportScanWorkbookPaged(
     const rows = await fetchPage(offset, pageSize)
     if (!rows.length) break
     for (const row of rows) {
-      chiTiet.addRow(detailColumns.map((c) => row[c.key] ?? ''))
+      const excelRow = chiTiet.addRow(detailColumns.map((c) => row[c.key] ?? ''))
+      excelRow.alignment = { horizontal: 'center', vertical: 'middle' }
     }
     total += rows.length
     offset += rows.length

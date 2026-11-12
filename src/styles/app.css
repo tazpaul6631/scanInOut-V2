@@ -932,6 +932,11 @@ body {
   padding-right: 0;
 }
 
+.history-page-panel th.scan-col-tight-top,
+.history-page-panel td.scan-col-tight-top {
+  padding-top: 0;
+}
+
 .history-page-panel th.scan-col-tight-start,
 .history-page-panel td.scan-col-tight-start {
   padding-left: 5px;

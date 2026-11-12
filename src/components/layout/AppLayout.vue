@@ -11,6 +11,7 @@ import UserMenu from '@/components/layout/UserMenu.vue'
 import AppFooter from '@/components/layout/AppFooter.vue'
 import { useSyncStore } from '@/stores/sync'
 import { useSettingsStore } from '@/stores/settings'
+import { useAuthStore } from '@/stores/auth'
 import { detectDeviceShell, isNative, type DeviceShell } from '@/adapters/platform'
 
 const { t } = useI18n()
@@ -18,6 +19,7 @@ const route = useRoute()
 const sync = useSyncStore()
 const { fromApiRunning, fromApiBatch, fromApiTotal } = storeToRefs(sync)
 const settings = useSettingsStore()
+const auth = useAuthStore()
 const open = ref(false)
 const collapsed = ref(false)
 const hoverOpen = ref(false)
@@ -182,20 +184,25 @@ const title = computed(() =>
               </RouterLink>
             </div>
           </nav>
-          <div class="sidebar-brand-foot">
+          <!-- <div class="sidebar-brand-foot">
             <img class="sidebar-brand-foot-logo" src="/logo-company.png" :alt="t('app.name')" />
             <p class="sidebar-brand-foot-copy">{{ t('footer.copyright') }}</p>
-          </div>
+          </div> -->
         </aside>
         <div class="main">
           <header class="topbar">
             <div class="flex min-w-0 items-center gap-2 text-cyan-700">
               <Button class="menu-btn" icon="pi pi-bars" :aria-label="t('nav.menu')" @click="toggleSidebar" />
-              <strong class="min-w-0 truncate text-xl">{{ title }}</strong>
+              <!-- <strong class="min-w-0 truncate text-xl">{{ title }}</strong> -->
             </div>
             <div class="flex min-w-0 shrink items-center gap-2">
               <Tag v-if="fromApiRunning" class="sync-from-api-badge max-w-[min(16rem,42vw)] overflow-hidden"
                 severity="info" :value="t('dashboard.syncFromApiRunning', { batch: fromApiBatch, n: fromApiTotal })" />
+              <div v-if="auth.session?.scanType"
+                class="max-w-[min(10rem,28vw)] truncate text-sm font-semibold text-emerald-700 bg-lime-100 px-2 py-1 rounded-md"
+                :title="auth.session.scanType">
+                {{ auth.session.scanType }}
+              </div>
               <LocaleSelect ref="localeSelect" :compact="shell === 'mobile'" />
               <UserMenu ref="userMenu" :compact="shell === 'mobile'" />
             </div>
