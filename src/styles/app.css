@@ -477,7 +477,15 @@ body {
 }
 
 .p-confirmdialog .p-dialog {
+  width: min(420px, 96vw);
+  max-width: 96vw;
   margin-top: var(--safe-top);
+}
+
+.p-confirmdialog .p-confirmdialog-message {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  white-space: normal;
 }
 
 .shell:not(.drawer) {
@@ -756,7 +764,7 @@ body {
   display: flex;
   position: fixed;
   inset: 0 auto 0 0;
-  width: min(195px, 90vw);
+  width: min(220px, 90vw);
   z-index: 40;
 }
 
@@ -916,4 +924,20 @@ body {
 .p-button:focus,
 .p-button:focus-visible {
   box-shadow: none;
+}
+
+.history-page-panel th.scan-col-tight,
+.history-page-panel td.scan-col-tight {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.history-page-panel th.scan-col-tight-start,
+.history-page-panel td.scan-col-tight-start {
+  padding-left: 5px;
+}
+
+.history-page-panel th.scan-col-tight-end,
+.history-page-panel td.scan-col-tight-end {
+  padding-right: 5px;
 }

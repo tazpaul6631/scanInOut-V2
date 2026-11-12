@@ -53,6 +53,21 @@ export const useAuthStore = defineStore('auth', () => {
     return res
   }
 
+  async function loginLocal(identifier: string): Promise<boolean> {
+    const value = identifier.trim()
+    if (!value) return false
+    const next: Session = {
+      email: value,
+      code: value,
+      loggedInAt: Date.now(),
+    }
+    await saveSession(next)
+    session.value = next
+    unauthorized.value = false
+    countdown.value = 3
+    return true
+  }
+
   function beginUnauthorized() {
     if (unauthorized.value || !session.value) return
     unauthorized.value = true
@@ -84,6 +99,7 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn,
     load,
     login,
+    loginLocal,
     logout,
     beginUnauthorized,
     expireSession,

@@ -7,6 +7,22 @@ export function formatDateTime(value: number | string | null | undefined): strin
   return dayjs(parsed).format('DD/MM/YYYY HH:mm:ss')
 }
 
+/** ExcelJS serializes Date via UTC fields — shift so the file shows device local wall-clock time. */
+export function toExcelLocalDate(value: number | string | Date): Date {
+  const d = value instanceof Date ? value : new Date(value)
+  return new Date(
+    Date.UTC(
+      d.getFullYear(),
+      d.getMonth(),
+      d.getDate(),
+      d.getHours(),
+      d.getMinutes(),
+      d.getSeconds(),
+      d.getMilliseconds(),
+    ),
+  )
+}
+
 export function formatMoney(value: number): string {
   return new Intl.NumberFormat('vi-VN', {
     style: 'currency',

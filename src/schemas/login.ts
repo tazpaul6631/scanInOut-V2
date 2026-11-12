@@ -1,11 +1,14 @@
 import { z } from 'zod'
 import { i18n } from '@/i18n'
 
-export function createLoginSchema() {
+export function createLoginSchema(opts?: { mobile?: boolean }) {
   const t = i18n.global.t
+  const mobile = Boolean(opts?.mobile)
   return z.object({
-    email: z.string().trim().min(1, t('validation.emailRequired')),
-    password: z.string().trim().min(1, t('validation.passwordRequired')),
+    employeeCode: z.string().trim().min(1, t('validation.employeeCodeRequired')),
+    password: mobile
+      ? z.string().trim().optional().default('')
+      : z.string().trim().min(1, t('validation.passwordRequired')),
   })
 }
 

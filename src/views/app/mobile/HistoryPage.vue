@@ -1,218 +1,261 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
+import DatePicker from 'primevue/datepicker'
+import DataTable from 'primevue/datatable'
+import Column from 'primevue/column'
+import type { DataTablePageEvent } from 'primevue/datatable'
 import Button from '@/components/ui/AppButton.vue'
-import Tag from '@/components/ui/AppTag.vue'
 import Dialog from '@/components/ui/AppDialog.vue'
 import InputText from '@/components/ui/AppInputText.vue'
-import Select from '@/components/ui/AppSelect.vue'
 import FloatLabel from '@/components/ui/AppFloatLabel.vue'
-import { countScans, deleteAllScanLogs, deleteScanLog, listScanLogs } from '@/services/repositories/scans'
-import { exportCsv, exportXlsx } from '@/services/export'
+import {
+  countScans,
+  countScansFiltered,
+  deleteAllScanLogs,
+  deleteScanLog,
+  listScanLogsPage,
+  summarizeScanLogs,
+  type ScanLogFilter,
+} from '@/services/repositories/scans'
+import { maybeArchiveScansIfFull } from '@/services/scan-archive'
+import { exportCsvPaged, exportScanWorkbookPaged, type ExportColumn } from '@/services/export'
 import dayjs from 'dayjs'
-import { formatDateTime } from '@/utils/format'
-import type { ScanDirection, ScanLog } from '@/types'
+import { formatDateTime, toExcelLocalDate } from '@/utils/format'
+import type { ScanLog } from '@/types'
 
 const { t } = useI18n()
-const toast = useToast()
 const confirm = useConfirm()
-const logs = ref<ScanLog[]>([])
+const pageRows = ref<ScanLog[]>([])
 const dbTotal = ref(0)
+const filteredTotal = ref(0)
 const filterCode = ref('')
-const filterType = ref<'all' | ScanDirection>('all')
+const filterLocation = ref('')
+const filterDate = ref<Date | null>(null)
+const draftCode = ref('')
+const draftLocation = ref('')
+const draftDate = ref<Date | null>(null)
+const filterOpen = ref(false)
 const page = ref(0)
 const pageSize = 12
 const exporting = ref(false)
 const usbGuideOpen = ref(false)
+const noticeOpen = ref(false)
+const noticeMessage = ref('')
+const EXPORT_PAGE_SIZE = 1000
 
-const typeOptions = computed(() => [
-  { label: t('scan.filterTypeAll'), value: 'all' as const },
-  { label: t('scan.directionIn'), value: 'in' as const },
-  { label: t('scan.directionOut'), value: 'out' as const },
-])
+function showNotice(summary: string, detail?: string) {
+  noticeMessage.value = detail ? `${summary}\n${detail}` : summary
+  noticeOpen.value = true
+}
 
-const exportColumns = computed(() => [
-  { key: 'index', header: '#', width: 8 },
-  { key: 'barcode', header: 'Barcode', width: 28 },
-  { key: 'type', header: 'Type', width: 12 },
+const exportColumns = computed<ExportColumn[]>(() => [
+  { key: 'index', header: '#', width: 5 },
+  { key: 'location', header: 'Location', width: 16 },
+  { key: 'barcode', header: 'Box', width: 28 },
   {
     key: 'datenow',
     header: 'DateNow',
     width: 22,
     numFmt: 'dd/mm/yyyy hh:mm:ss',
   },
+  { key: 'userId', header: 'UserId', width: 18 },
+  { key: 'method', header: 'Method', width: 12 },
 ])
 
-function directionLabel(direction: ScanLog['direction']) {
-  return direction === 'out' ? t('scan.directionOut') : t('scan.directionIn')
+function userLabel(row: ScanLog) {
+  return row.userCode?.trim() || row.userEmail?.trim() || '—'
 }
 
-const filteredLogs = computed(() => {
-  const code = filterCode.value.trim().toLowerCase()
-  const type = filterType.value
-  // logs from SQLite are newest-first; reverse so list shows #1 → n (oldest → newest)
-  return logs.value
-    .filter((row) => {
-      if (code && !row.value.toLowerCase().includes(code)) return false
-      if (type !== 'all' && row.direction !== type) return false
-      return true
-    })
-    .slice()
-    .reverse()
-})
+function summaryPart(value: string) {
+  const text = value.trim()
+  return text || t('scan.filterEmpty')
+}
 
-const hasFilter = computed(() => Boolean(filterCode.value.trim() || filterType.value !== 'all'))
-const total = computed(() => filteredLogs.value.length)
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
-const pageRows = computed(() => {
-  const start = page.value * pageSize
-  return filteredLogs.value.slice(start, start + pageSize)
-})
-const rangeLabel = computed(() => {
-  if (!total.value) return `0-0 / 0`
-  const low = page.value * pageSize + 1
-  const high = Math.min(total.value, low + pageRows.value.length - 1)
-  return `${low}->${high} / ${total.value}`
-})
+const filterParts = computed(() => [
+  summaryPart(filterCode.value),
+  summaryPart(filterLocation.value),
+  filterDate.value ? dayjs(filterDate.value).format('DD/MM/YYYY') : t('scan.filterEmpty'),
+])
 
-const countLabel = computed(() => {
-  if (hasFilter.value && total.value !== dbTotal.value) {
-    return t('scan.filteredOfTotal', { filtered: total.value, total: dbTotal.value })
+const filterSummary = computed(() => filterParts.value.join(' > '))
+
+function currentFilter(): ScanLogFilter {
+  const filter: ScanLogFilter = {
+    code: filterCode.value,
+    location: filterLocation.value,
   }
-  return t('scan.totalCount', { n: dbTotal.value })
-})
+  if (filterDate.value) {
+    filter.dateFrom = dayjs(filterDate.value).startOf('day').valueOf()
+    filter.dateTo = dayjs(filterDate.value).endOf('day').valueOf()
+  }
+  return filter
+}
+
+const hasFilter = computed(() =>
+  Boolean(filterCode.value.trim() || filterLocation.value.trim() || filterDate.value),
+)
+
+const paginatorTemplate =
+  'FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport'
+const pageReport = 'Showing {first} to {last} of {totalRecords} entries'
 
 function rowIndex(index: number) {
   return page.value * pageSize + index + 1
 }
 
-watch([filterCode, filterType], () => {
-  page.value = 0
-})
-
-watch(filteredLogs, () => {
-  if (page.value > pageCount.value - 1) page.value = Math.max(0, pageCount.value - 1)
-})
-
-async function reload() {
-  const [rows, count] = await Promise.all([listScanLogs(), countScans()])
-  logs.value = rows
-  dbTotal.value = count
-  page.value = 0
+function onPage(event: DataTablePageEvent) {
+  page.value = event.page
 }
 
-onMounted(() => {
-  void reload()
+async function loadPage() {
+  const filter = currentFilter()
+  const [filtered, total] = await Promise.all([countScansFiltered(filter), countScans()])
+  filteredTotal.value = filtered
+  dbTotal.value = total
+  const maxPage = Math.max(0, Math.ceil(filtered / pageSize) - 1)
+  if (page.value > maxPage) page.value = maxPage
+  pageRows.value = await listScanLogsPage({
+    ...filter,
+    limit: pageSize,
+    offset: page.value * pageSize,
+    order: 'asc',
+  })
+}
+
+watch(page, () => {
+  void loadPage()
 })
 
-onActivated(() => {
-  void reload()
+async function tryAutoArchive() {
+  try {
+    const archived = await maybeArchiveScansIfFull()
+    if (!archived) return
+    page.value = 0
+    await loadPage()
+    showNotice(
+      t('scan.autoArchiveDone', { n: archived.n }),
+      t('sync.exported', { file: archived.filename }),
+    )
+  } catch (err) {
+    showNotice(err instanceof Error ? err.message : String(err))
+  }
+}
+
+onMounted(async () => {
+  await loadPage()
+  await tryAutoArchive()
 })
+
+onActivated(async () => {
+  await loadPage()
+  await tryAutoArchive()
+})
+
+function openFilter() {
+  draftCode.value = filterCode.value
+  draftLocation.value = filterLocation.value
+  draftDate.value = filterDate.value ? new Date(filterDate.value.getTime()) : null
+  filterOpen.value = true
+}
+
+function applyFilter() {
+  filterCode.value = draftCode.value.trim()
+  filterLocation.value = draftLocation.value.trim()
+  filterDate.value = draftDate.value ? new Date(draftDate.value.getTime()) : null
+  filterOpen.value = false
+  if (page.value !== 0) page.value = 0
+  else void loadPage()
+}
 
 function clearFilter() {
   filterCode.value = ''
-  filterType.value = 'all'
-  page.value = 0
+  filterLocation.value = ''
+  filterDate.value = null
+  draftCode.value = ''
+  draftLocation.value = ''
+  draftDate.value = null
+  if (page.value !== 0) page.value = 0
+  else void loadPage()
 }
 
-function prevPage() {
-  if (page.value > 0) page.value -= 1
-}
-
-function nextPage() {
-  if (page.value < pageCount.value - 1) page.value += 1
-}
-
-function buildExportRows(source: ScanLog[], asExcelDate: boolean) {
-  return source.map((row, index) => ({
-    index: index + 1,
+function mapExportRow(row: ScanLog, index: number, asExcelDate: boolean) {
+  return {
+    index,
+    location: row.location,
     barcode: row.value,
-    type: directionLabel(row.direction),
-    datenow: asExcelDate ? new Date(row.createdAt) : formatDateTime(row.createdAt),
-  }))
+    datenow: asExcelDate ? toExcelLocalDate(row.createdAt) : formatDateTime(row.createdAt),
+    userId: row.userCode?.trim() || row.userEmail?.trim() || '',
+    method: row.kind === 'manual' ? 'Input' : 'Laser',
+  }
 }
 
-async function loadAllForExport(): Promise<ScanLog[]> {
-  const rows = await listScanLogs()
-  logs.value = rows
-  dbTotal.value = rows.length
-  return rows
+async function exportAllCsv(filename: string): Promise<number> {
+  let index = 0
+  return exportCsvPaged(filename, exportColumns.value, async (offset, limit) => {
+    const rows = await listScanLogsPage({
+      limit,
+      offset,
+      order: 'asc',
+    })
+    return rows.map((row) => {
+      index += 1
+      return mapExportRow(row, index, false)
+    })
+  }, EXPORT_PAGE_SIZE)
+}
+
+async function exportAllXlsx(filename: string): Promise<number> {
+  const summary = await summarizeScanLogs()
+  let index = 0
+  return exportScanWorkbookPaged(
+    filename,
+    exportColumns.value,
+    summary,
+    async (offset, limit) => {
+      const rows = await listScanLogsPage({
+        limit,
+        offset,
+        order: 'asc',
+      })
+      return rows.map((row) => {
+        index += 1
+        return mapExportRow(row, index, true)
+      })
+    },
+    EXPORT_PAGE_SIZE,
+  )
 }
 
 async function doExport(kind: 'csv' | 'xlsx') {
   exporting.value = true
   try {
-    const all = await loadAllForExport()
-    if (!all.length) {
-      toast.add({ severity: 'warn', summary: t('scan.emptyTitle'), life: 2500, closable: false })
+    const total = await countScans()
+    if (!total) {
+      showNotice(t('scan.emptyTitle'))
       return
     }
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    const filename = kind === 'csv' ? `scan-logs-${stamp}.csv` : `scan-logs-${stamp}.xlsx`
-    // Export full DB (oldest → newest), ignore UI filter so nothing is dropped.
-    const rows = buildExportRows([...all].reverse(), kind === 'xlsx')
-    if (kind === 'csv') await exportCsv(filename, exportColumns.value, rows)
-    else await exportXlsx(filename, exportColumns.value, rows)
-    toast.add({
-      severity: 'success',
-      summary: t('sync.exported', { file: filename }),
-      detail: t('scan.totalCount', { n: all.length }),
-      life: 5000,
-      closable: false,
-    })
+    if (kind === 'csv') {
+      const filename = `scan-logs-${stamp}.csv`
+      const n = await exportAllCsv(filename)
+      showNotice(t('sync.exported', { file: filename }), t('scan.totalCount', { n }))
+      return
+    }
+    const filename = `scan-logs-${stamp}.xlsx`
+    const n = await exportAllXlsx(filename)
+    showNotice(t('sync.exported', { file: filename }), t('scan.totalCount', { n }))
   } catch (err) {
-    toast.add({
-      severity: 'error',
-      summary: err instanceof Error ? err.message : String(err),
-      life: 4000,
-      closable: false,
-    })
+    showNotice(err instanceof Error ? err.message : String(err))
   } finally {
     exporting.value = false
   }
 }
 
-function remove(row: ScanLog) {
-  confirm.require({
-    header: t('scan.deleteTitle'),
-    message: t('scan.deleteMessage', { value: row.value }),
-    acceptLabel: t('common.delete'),
-    rejectLabel: t('common.cancel'),
-    acceptIcon: 'pi pi-trash',
-    acceptClass: 'p-button-danger',
-    rejectClass: 'p-button-secondary',
-    acceptProps: {
-      raised: true,
-      ripple: false,
-      icon: 'pi pi-trash',
-    },
-    rejectProps: {
-      text: true,
-      raised: false,
-      ripple: false,
-    },
-    accept: async () => {
-      try {
-        await deleteScanLog(row.id)
-        toast.add({ severity: 'success', summary: t('scan.deleted'), life: 2000, closable: false })
-        await reload()
-      } catch (err) {
-        toast.add({
-          severity: 'error',
-          summary: err instanceof Error ? err.message : t('scan.deleteError'),
-          life: 3500,
-          closable: false,
-        })
-      }
-    },
-  })
-}
-
 function deleteAll() {
-  if (!logs.value.length) {
-    toast.add({ severity: 'warn', summary: t('scan.emptyTitle'), life: 2500, closable: false })
+  if (!dbTotal.value) {
+    showNotice(t('scan.emptyTitle'))
     return
   }
   confirm.require({
@@ -236,34 +279,24 @@ function deleteAll() {
     accept: async () => {
       exporting.value = true
       try {
-        const all = await loadAllForExport()
-        if (!all.length) {
-          toast.add({ severity: 'warn', summary: t('scan.emptyTitle'), life: 2500, closable: false })
+        const total = await countScans()
+        if (!total) {
+          showNotice(t('scan.emptyTitle'))
           return
         }
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-        const filename = `scan-logs-backup-${stamp}.xlsx`
-        await exportXlsx(
-          filename,
-          exportColumns.value,
-          buildExportRows([...all].reverse(), true),
-        )
+        // CSV paged backup — safer than full XLSX at 100k+
+        const filename = `scan-logs-backup-${stamp}.csv`
+        const n = await exportAllCsv(filename)
         await deleteAllScanLogs()
-        toast.add({
-          severity: 'success',
-          summary: t('scan.deleteAllDone'),
-          detail: `${t('sync.exported', { file: filename })} · ${t('scan.totalCount', { n: all.length })}`,
-          life: 5000,
-          closable: false,
-        })
-        await reload()
+        showNotice(
+          t('scan.deleteAllDone'),
+          `${t('sync.exported', { file: filename })} · ${t('scan.totalCount', { n })}`,
+        )
+        page.value = 0
+        await loadPage()
       } catch (err) {
-        toast.add({
-          severity: 'error',
-          summary: err instanceof Error ? err.message : t('scan.deleteError'),
-          life: 4000,
-          closable: false,
-        })
+        showNotice(err instanceof Error ? err.message : t('scan.deleteError'))
       } finally {
         exporting.value = false
       }
@@ -276,88 +309,122 @@ function deleteAll() {
   <div class="page-fill gap-3 overflow-hidden" :style="{ paddingBottom: 'var(--safe-bottom)' }">
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
       <div class="flex flex-wrap gap-2">
-        <!-- <Button icon="pi pi-refresh" :aria-label="t('common.search')" :disabled="exporting" @click="reload" /> -->
-        <Button icon="pi pi-file-export" :loading="exporting" @click="doExport('csv')" />
-        <Button icon="pi pi-file-excel" :loading="exporting" @click="doExport('xlsx')" />
-        <Button icon="pi pi-info-circle" severity="help" outlined @click="usbGuideOpen = true" />
+        <Button icon="pi pi-file-export" size="large" :loading="exporting" @click="doExport('csv')" />
+        <Button icon="pi pi-file-excel" size="large" :loading="exporting" @click="doExport('xlsx')" />
+        <Button icon="pi pi-info-circle" size="large" severity="help" outlined @click="usbGuideOpen = true" />
       </div>
-      <div class="flex flex-wrap gap-2 justify-end">
-        <Button icon="pi pi-trash" severity="danger" outlined :loading="exporting"
-          :aria-label="t('common.deleteAll')" :disabled="!logs.length || exporting" @click="deleteAll" />
-        <Button icon="pi pi-filter-slash" outlined :disabled="!hasFilter" :aria-label="t('common.clearFilter')"
-          @click="clearFilter" />
-      </div>
+      <!-- <div class="flex flex-wrap gap-2 justify-end">
+        <Button icon="pi pi-trash" size="large" severity="danger" outlined :loading="exporting"
+          :aria-label="t('common.deleteAll')" :disabled="!dbTotal || exporting" @click="deleteAll" />
+      </div> -->
     </div>
 
-    <div class="flex shrink-0 flex-wrap items-center gap-2">
-      <FloatLabel class="min-w-28 flex-1">
-        <InputText id="history-filter-code" name="history-filter-code" v-model="filterCode" class="w-full" />
-        <label for="history-filter-code">{{ t('scan.filterCode') }}</label>
-      </FloatLabel>
-      <FloatLabel class="min-w-28 w-36">
-        <Select input-id="history-filter-type" name="history-filter-type" v-model="filterType"
-          :options="typeOptions" option-label="label" option-value="value" class="w-full" />
-        <label for="history-filter-type">{{ t('scan.filterType') }}</label>
-      </FloatLabel>
-      <span class="shrink-0 text-sm font-semibold text-ink">{{ countLabel }}</span>
-    </div>
-
-    <div class="page-fill-panel rounded-2xl border border-line bg-white p-2 shadow-panel">
-      <div class="min-h-0 flex-1 overflow-auto">
-        <div v-if="!pageRows.length"
-          class="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center text-muted">
-          <i class="pi pi-inbox text-[1.75rem]" />
-          <p class="m-0 font-semibold text-ink">{{ t('scan.emptyTitle') }}</p>
-          <p class="m-0">{{ t('scan.emptyHint') }}</p>
+    <div class="flex shrink-0 items-stretch overflow-hidden rounded-2xl border bg-white shadow-panel"
+      :class="hasFilter ? 'border-accent' : 'border-line'">
+      <button type="button" class="flex min-w-0 flex-1 items-center gap-3 border-0 bg-transparent px-3 py-2.5 text-left"
+        :aria-label="filterSummary" @click="openFilter">
+        <div class="min-w-0 flex-1">
+          <p class="m-0 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            {{ t('scan.code') }} > {{ t('scan.location') }} > {{ t('scan.dateNow') }}
+          </p>
+          <div class="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden">
+            <template v-for="(part, index) in filterParts" :key="index">
+              <i v-if="index" class="pi pi-angle-right shrink-0 text-[10px] text-muted" aria-hidden="true" />
+              <span class="min-w-0 truncate rounded-lg px-1.5 py-0.5 text-sm font-semibold"
+                :class="part === t('scan.filterEmpty') ? 'bg-[#f3f6f5] text-muted' : 'bg-[#e8f5ef] text-ink'">
+                {{ part }}
+              </span>
+            </template>
+          </div>
         </div>
+      </button>
+      <button type="button"
+        class="shrink-0 items-center justify-center border-0 border-l border-line bg-transparent text-green-500 px-5 "
+        :disabled="!hasFilter" :aria-label="t('common.clearFilter')" @click="clearFilter">
+        <i class="pi pi-filter-slash" aria-hidden="true" />
+      </button>
+    </div>
 
-        <table v-else class="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr class="border-b border-line text-muted">
-              <th class="px-1.5 py-2 font-semibold">#</th>
-              <th class="px-1.5 py-2 font-semibold">{{ t('scan.code') }}</th>
-              <th class="px-1.5 py-2 font-semibold">{{ t('scan.type') }}</th>
-              <th class="px-1.5 py-2 font-semibold">{{ t('scan.dateNow') }}</th>
-              <th class="px-1.5 py-2 font-semibold"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, index) in pageRows" :key="row.id" class="border-b border-line last:border-b-0">
-              <td class="px-1.5 py-2 align-middle">{{ rowIndex(index) }}</td>
-              <td class="px-1.5 py-2 align-middle break-all font-medium text-ink">{{ row.value }}</td>
-              <td class="px-1.5 py-2 align-middle">
-                <Tag :value="directionLabel(row.direction)"
-                  :severity="row.direction === 'out' ? 'warn' : 'success'" />
-              </td>
-              <td class="px-1.5 py-2 align-middle whitespace-nowrap text-muted">
-                <div class="flex flex-col leading-tight">
-                  <span>{{ dayjs(row.createdAt).format('DD/MM/YYYY') }}</span>
-                  <span>{{ dayjs(row.createdAt).format('HH:mm:ss') }}</span>
-                </div>
-              </td>
-              <td class="px-1.5 py-2 align-middle">
-                <Button icon="pi pi-trash" severity="danger" text rounded :aria-label="t('common.delete')"
-                  @click="remove(row)" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div v-if="total" class="mt-2 mb-2 flex shrink-0 items-center justify-center gap-3 text-sm text-muted">
-        <Button icon="pi pi-chevron-left" text rounded :disabled="page <= 0" :aria-label="t('common.back')"
-          @click="prevPage" />
-        <span>{{ rangeLabel }}</span>
-        <Button icon="pi pi-chevron-right" text rounded :disabled="page >= pageCount - 1"
-          aria-label="Next" @click="nextPage" />
+    <div class="history-page-panel page-fill-panel rounded-2xl border border-line bg-white p-2 shadow-panel">
+      <div class="table-wrap-fill w-full max-w-full">
+        <DataTable :value="pageRows" data-key="id" :lazy="true" paginator :rows="pageSize"
+          :total-records="filteredTotal" :first="page * pageSize" :paginator-template="paginatorTemplate"
+          :current-page-report-template="pageReport" scrollable scroll-height="flex" striped-rows row-hover
+          @page="onPage">
+          <Column header="#" header-class="scan-col-tight-start" body-class="scan-col-tight-start">
+            <template #body="{ index }">{{ rowIndex(index) }}</template>
+          </Column>
+          <Column :header="t('scan.location')" header-class="scan-col-tight" body-class="scan-col-tight">
+            <template #body="{ data }">
+              <span class="break-all font-medium text-ink">{{ data.location || '—' }}</span>
+            </template>
+          </Column>
+          <Column :header="t('scan.code')">
+            <template #body="{ data }">
+              <span class="break-all font-medium text-ink">{{ data.value }}</span>
+            </template>
+          </Column>
+          <Column :header="t('scan.dateNow')" header-class="scan-col-tight" body-class="scan-col-tight">
+            <template #body="{ data }">
+              <div class="flex flex-col whitespace-nowrap leading-tight text-muted">
+                <span>{{ dayjs(data.createdAt).format('DD/MM/YYYY') }}</span>
+                <span>{{ dayjs(data.createdAt).format('HH:mm:ss') }}</span>
+              </div>
+            </template>
+          </Column>
+          <Column :header="t('scan.user')" header-class="scan-col-tight-end" body-class="scan-col-tight-end">
+            <template #body="{ data }">
+              <span class="break-all text-muted">{{ userLabel(data) }}</span>
+            </template>
+          </Column>
+          <template #empty>
+            <div
+              class="table-empty flex min-h-full flex-col items-center justify-center gap-2 px-4 py-10 text-center text-muted">
+              <i class="pi pi-inbox text-[1.75rem]" />
+              <p class="m-0 font-semibold text-ink">{{ t('scan.emptyTitle') }}</p>
+              <p class="m-0">{{ t('scan.emptyHint') }}</p>
+            </div>
+          </template>
+        </DataTable>
       </div>
     </div>
+
+    <Dialog v-model:visible="noticeOpen" modal :closable="false" :header="t('scan.noticeTitle')"
+      :style="{ width: 'min(420px, 96vw)' }">
+      <p class="m-0 whitespace-pre-line text-lg leading-relaxed text-ink">{{ noticeMessage }}</p>
+      <div class="mt-4 flex justify-end">
+        <Button :label="t('common.cancel')" size="large" @click="noticeOpen = false" />
+      </div>
+    </Dialog>
 
     <Dialog v-model:visible="usbGuideOpen" modal dismissable-mask :header="t('mobile.usbGuideTitle')"
       :style="{ width: 'min(420px, 96vw)' }">
-      <p class="m-0 whitespace-pre-line text-sm leading-relaxed text-ink">{{ t('mobile.usbGuideSteps') }}</p>
+      <p class="m-0 whitespace-pre-line text-lg leading-relaxed text-ink">{{ t('mobile.usbGuideSteps') }}</p>
       <div class="mt-4 flex justify-end">
-        <Button :label="t('common.cancel')" @click="usbGuideOpen = false" />
+        <Button :label="t('common.cancel')" size="large" @click="usbGuideOpen = false" />
+      </div>
+    </Dialog>
+
+    <Dialog v-model:visible="filterOpen" modal dismissable-mask :header="t('scan.filterTitle')"
+      :style="{ width: 'min(420px, 96vw)' }" :closable="false">
+      <div class="grid gap-4 mt-2">
+        <FloatLabel class="w-full">
+          <InputText id="history-draft-code" name="history-draft-code" v-model="draftCode" class="w-full" />
+          <label for="history-draft-code">{{ t('scan.filterCode') }}</label>
+        </FloatLabel>
+        <FloatLabel class="w-full">
+          <InputText id="history-draft-location" name="history-draft-location" v-model="draftLocation" class="w-full" />
+          <label for="history-draft-location">{{ t('scan.filterLocation') }}</label>
+        </FloatLabel>
+        <FloatLabel class="w-full">
+          <DatePicker input-id="history-draft-date" v-model="draftDate" class="w-full" date-format="dd/mm/yy" show-icon
+            show-button-bar />
+          <label for="history-draft-date">{{ t('scan.filterDate') }}</label>
+        </FloatLabel>
+      </div>
+      <div class="mt-4 flex justify-end gap-2">
+        <!-- <Button :label="t('common.cancel')" severity="secondary" text @click="filterOpen = false" /> -->
+        <Button :label="t('common.apply')" @click="applyFilter" />
       </div>
     </Dialog>
   </div>

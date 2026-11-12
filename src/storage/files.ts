@@ -5,6 +5,14 @@ import { trError } from '@/i18n'
 
 const DATA_DIR = Directory.Data
 const DOCS_DIR = Directory.Documents
+const IDB_NAME = 'scaninoutv2-files'
+const IDB_STORE = 'files'
+
+function supportsOpfs(): boolean {
+  return (
+    typeof navigator !== 'undefined' && typeof navigator.storage?.getDirectory === 'function'
+  )
+}
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer()
@@ -17,7 +25,66 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary)
 }
 
+function openIdb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1)
+    req.onupgradeneeded = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE)
+      }
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error ?? new Error(trError('invalidPath')))
+  })
+}
+
+async function idbPut(path: string, value: Blob | string): Promise<void> {
+  const db = await openIdb()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite')
+      tx.objectStore(IDB_STORE).put(value, path)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error ?? new Error(trError('invalidPath')))
+      tx.onabort = () => reject(tx.error ?? new Error(trError('invalidPath')))
+    })
+  } finally {
+    db.close()
+  }
+}
+
+async function idbGet(path: string): Promise<Blob | string | undefined> {
+  const db = await openIdb()
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly')
+      const req = tx.objectStore(IDB_STORE).get(path)
+      req.onsuccess = () => resolve(req.result as Blob | string | undefined)
+      req.onerror = () => reject(req.error ?? new Error(trError('invalidPath')))
+    })
+  } finally {
+    db.close()
+  }
+}
+
+async function idbDelete(path: string): Promise<void> {
+  const db = await openIdb()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite')
+      tx.objectStore(IDB_STORE).delete(path)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error ?? new Error(trError('invalidPath')))
+      tx.onabort = () => reject(tx.error ?? new Error(trError('invalidPath')))
+    })
+  } finally {
+    db.close()
+  }
+}
+
 async function getOpfsHandle(path: string, create: boolean) {
+  if (!supportsOpfs()) throw new Error(trError('invalidPath'))
   const parts = path.split('/').filter(Boolean)
   const name = parts.pop()
   if (!name) throw new Error(trError('invalidPath'))
@@ -59,10 +126,15 @@ export async function writeTextFile(
     return
   }
 
-  const handle = await getOpfsHandle(path, true)
-  const writable = await handle.createWritable()
-  await writable.write(content)
-  await writable.close()
+  if (supportsOpfs()) {
+    const handle = await getOpfsHandle(path, true)
+    const writable = await handle.createWritable()
+    await writable.write(content)
+    await writable.close()
+    return
+  }
+
+  await idbPut(path, content)
 }
 
 export async function writeBinaryFile(path: string, data: Blob | Uint8Array): Promise<void> {
@@ -90,10 +162,15 @@ export async function writeBinaryFile(path: string, data: Blob | Uint8Array): Pr
     return
   }
 
-  const handle = await getOpfsHandle(path, true)
-  const writable = await handle.createWritable()
-  await writable.write(blob)
-  await writable.close()
+  if (supportsOpfs()) {
+    const handle = await getOpfsHandle(path, true)
+    const writable = await handle.createWritable()
+    await writable.write(blob)
+    await writable.close()
+    return
+  }
+
+  await idbPut(path, blob)
 }
 
 export async function readTextFile(path: string, directory: 'data' | 'documents' = 'data'): Promise<string> {
@@ -106,9 +183,16 @@ export async function readTextFile(path: string, directory: 'data' | 'documents'
     return String(result.data)
   }
 
-  const handle = await getOpfsHandle(path, false)
-  const file = await handle.getFile()
-  return file.text()
+  if (supportsOpfs()) {
+    const handle = await getOpfsHandle(path, false)
+    const file = await handle.getFile()
+    return file.text()
+  }
+
+  const value = await idbGet(path)
+  if (typeof value === 'string') return value
+  if (value instanceof Blob) return value.text()
+  throw new Error(trError('invalidPath'))
 }
 
 export async function readBinaryFile(path: string): Promise<Blob> {
@@ -124,8 +208,15 @@ export async function readBinaryFile(path: string): Promise<Blob> {
     return new Blob([bytes])
   }
 
-  const handle = await getOpfsHandle(path, false)
-  return handle.getFile()
+  if (supportsOpfs()) {
+    const handle = await getOpfsHandle(path, false)
+    return handle.getFile()
+  }
+
+  const value = await idbGet(path)
+  if (value instanceof Blob) return value
+  if (typeof value === 'string') return new Blob([value], { type: 'text/plain' })
+  throw new Error(trError('invalidPath'))
 }
 
 export async function deleteDiskFile(path: string): Promise<void> {
@@ -133,15 +224,25 @@ export async function deleteDiskFile(path: string): Promise<void> {
     await Filesystem.deleteFile({ path, directory: DATA_DIR })
     return
   }
-  try {
-    const parts = path.split('/').filter(Boolean)
-    const name = parts.pop()
-    if (!name) return
-    let dir = await navigator.storage.getDirectory()
-    for (const part of parts) {
-      dir = await dir.getDirectoryHandle(part)
+
+  if (supportsOpfs()) {
+    try {
+      const parts = path.split('/').filter(Boolean)
+      const name = parts.pop()
+      if (!name) return
+      let dir = await navigator.storage.getDirectory()
+      for (const part of parts) {
+        dir = await dir.getDirectoryHandle(part)
+      }
+      await dir.removeEntry(name)
+    } catch {
+      // ignore missing file
     }
-    await dir.removeEntry(name)
+    return
+  }
+
+  try {
+    await idbDelete(path)
   } catch {
     // ignore missing file
   }
@@ -162,8 +263,12 @@ export async function fileExists(path: string): Promise<boolean> {
       await Filesystem.stat({ path, directory: DATA_DIR })
       return true
     }
-    await getOpfsHandle(path, false)
-    return true
+    if (supportsOpfs()) {
+      await getOpfsHandle(path, false)
+      return true
+    }
+    const value = await idbGet(path)
+    return value !== undefined
   } catch {
     return false
   }

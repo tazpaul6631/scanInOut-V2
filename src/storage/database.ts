@@ -86,6 +86,33 @@ async function migrateSchema(fromVersion: number): Promise<void> {
       `ALTER TABLE scan_logs ADD COLUMN direction TEXT NOT NULL DEFAULT 'in'`,
     )
   }
+  if (fromVersion < 3) {
+    await ensureColumn(
+      'scan_logs',
+      'location',
+      `ALTER TABLE scan_logs ADD COLUMN location TEXT NOT NULL DEFAULT ''`,
+    )
+    await ensureColumn(
+      'scan_logs',
+      'user_code',
+      `ALTER TABLE scan_logs ADD COLUMN user_code TEXT`,
+    )
+    await ensureColumn(
+      'scan_logs',
+      'user_email',
+      `ALTER TABLE scan_logs ADD COLUMN user_email TEXT`,
+    )
+    await execute(`CREATE INDEX IF NOT EXISTS idx_scan_logs_value ON scan_logs(value)`)
+    await execute(`CREATE INDEX IF NOT EXISTS idx_scan_logs_location ON scan_logs(location)`)
+  }
+  if (fromVersion < 4) {
+    await ensureColumn(
+      'scan_logs',
+      'synced',
+      `ALTER TABLE scan_logs ADD COLUMN synced INTEGER NOT NULL DEFAULT 0`,
+    )
+    await execute(`CREATE INDEX IF NOT EXISTS idx_scan_logs_synced ON scan_logs(synced)`)
+  }
 }
 
 async function applySchema(): Promise<void> {

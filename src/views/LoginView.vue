@@ -13,8 +13,16 @@ import { createLoginSchema } from '@/schemas/login'
 import { useSettingsStore } from '@/stores/settings'
 import LocaleSelect from '@/components/layout/LocaleSelect.vue'
 import { detectDeviceShell, homePathForShell, type DeviceShell } from '@/adapters/platform'
+import { startNfcScan, stopNfcScan } from '@/adapters/nfc'
+import { useBarcodeWedge } from '@/composables/useBarcodeWedge'
 import { useAuthStore } from '@/stores/auth'
 import { readApiFailure } from '@/services/api/error'
+
+const NFC_SUPPRESS_MS = 1500
+/** Colon-separated NFC UID, e.g. aa:bb:cc:dd */
+const NFC_UID_COLON = /^([0-9a-f]{2}:){3,}[0-9a-f]{2}$/i
+/** Long pure hex (common HID dump of UID without separators) */
+const NFC_UID_HEX = /^[0-9a-f]{8,32}$/i
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -24,47 +32,143 @@ const auth = useAuthStore()
 const submitting = ref(false)
 const credentialError = ref('')
 const shell = ref<DeviceShell>(detectDeviceShell())
+const isMobile = computed(() => shell.value === 'mobile')
+const nfcSuppressUntil = ref(0)
+const nfcRecent = ref(new Set<string>())
 
 function refreshShell() {
   shell.value = detectDeviceShell()
 }
 
+function normalizeScan(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function looksLikeNfcUid(value: string): boolean {
+  const raw = value.trim()
+  if (!raw) return false
+  if (NFC_UID_COLON.test(raw)) return true
+  return NFC_UID_HEX.test(raw) && !/[g-z]/i.test(raw)
+}
+
+function rememberNfcValue(raw: string) {
+  const value = raw.trim()
+  if (!value) return
+  const next = new Set(nfcRecent.value)
+  next.add(value)
+  next.add(normalizeScan(value))
+  nfcRecent.value = next
+  nfcSuppressUntil.value = Date.now() + NFC_SUPPRESS_MS
+  employeeCode.value = ''
+  clearCredentialError()
+}
+
+function shouldBlockAsNfc(value: string): boolean {
+  const raw = value.trim()
+  if (!raw) return false
+  if (looksLikeNfcUid(raw)) return true
+  if (Date.now() > nfcSuppressUntil.value) return false
+  const norm = normalizeScan(raw)
+  return nfcRecent.value.has(raw) || nfcRecent.value.has(norm)
+}
+
+async function armNfcSuppress() {
+  if (!isMobile.value) return
+  try {
+    await startNfcScan((result) => {
+      rememberNfcValue(result.value)
+    })
+  } catch {
+    // No NFC hardware — laser-only login still works
+  }
+}
+
 onMounted(() => {
   refreshShell()
   window.addEventListener('resize', refreshShell)
+  void armNfcSuppress()
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', refreshShell)
+  void stopNfcScan()
 })
 
 const { defineField, handleSubmit, errors, validateField } = useForm({
   validationSchema: computed(() => {
     void locale.value
-    return toTypedSchema(createLoginSchema())
+    return toTypedSchema(createLoginSchema({ mobile: isMobile.value }))
   }),
-  initialValues: { email: '', password: '' },
+  initialValues: { employeeCode: '', password: '' },
   validateOnMount: false,
 })
 
-const [email, emailAttrs] = defineField('email', { validateOnModelUpdate: true })
+const [employeeCode, employeeCodeAttrs] = defineField('employeeCode', { validateOnModelUpdate: true })
 const [password, passwordAttrs] = defineField('password', { validateOnModelUpdate: true })
 
 function clearCredentialError() {
   if (credentialError.value) credentialError.value = ''
 }
 
-const submit = handleSubmit(async (values) => {
+function redirectAfterLogin() {
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  const target = redirect.startsWith('/') && !redirect.startsWith('/login')
+    ? redirect
+    : homePathForShell()
+  return router.replace(target)
+}
+
+async function loginWithEmployeeCode(identifier: string) {
+  const value = identifier.trim()
+  if (!value || submitting.value) return
+  employeeCode.value = value
   credentialError.value = ''
   submitting.value = true
   try {
-    // const res = await auth.login(values.email, values.password)
+    const ok = await auth.loginLocal(value)
+    if (ok && auth.isLoggedIn) {
+      await redirectAfterLogin()
+      return
+    }
+    credentialError.value = t('auth.invalid')
+  } catch (err) {
+    credentialError.value = readApiFailure(err) || t('auth.invalid')
+  } finally {
+    submitting.value = false
+  }
+}
+
+useBarcodeWedge(
+  (value) => {
+    if (!isMobile.value) return
+    if (shouldBlockAsNfc(value)) {
+      employeeCode.value = ''
+      clearCredentialError()
+      return
+    }
+    void loginWithEmployeeCode(value)
+  },
+  { allowInputIds: ['employeeCode'], clearField: false },
+)
+
+const submit = handleSubmit(async (values) => {
+  if (isMobile.value) {
+    const value = values.employeeCode.trim()
+    if (shouldBlockAsNfc(value)) {
+      employeeCode.value = ''
+      clearCredentialError()
+      return
+    }
+    await loginWithEmployeeCode(value)
+    return
+  }
+
+  credentialError.value = ''
+  submitting.value = true
+  try {
+    // const res = await auth.login(values.employeeCode, values.password)
     // if (res.success && auth.isLoggedIn) {
-    //   const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-    //   const target = redirect.startsWith('/') && !redirect.startsWith('/login')
-    //     ? redirect
-    //     : homePathForShell()
-    //   await router.replace(target)
+    //   await redirectAfterLogin()
     //   return
     // }
     // credentialError.value = res.message || t('auth.invalid')
@@ -106,13 +210,14 @@ const submit = handleSubmit(async (values) => {
 
       <div>
         <FloatLabel variant="on">
-          <InputText id="email" v-model="email" v-bind="emailAttrs" :invalid="Boolean(errors.email)"
-            autocomplete="email" class="w-full" @update:model-value="clearCredentialError" />
-          <label for="email">{{ t('auth.email') }}</label>
+          <InputText id="employeeCode" v-model="employeeCode" v-bind="employeeCodeAttrs"
+            :invalid="Boolean(errors.employeeCode)" autocomplete="username" class="w-full"
+            @update:model-value="clearCredentialError" />
+          <label for="employeeCode">{{ t('auth.employeeCode') }}</label>
         </FloatLabel>
-        <small class="p-error">{{ errors.email }}</small>
+        <small class="p-error">{{ errors.employeeCode }}</small>
       </div>
-      <div>
+      <div v-if="!isMobile">
         <FloatLabel variant="on">
           <Password input-id="password" v-model="password" v-bind="passwordAttrs" :invalid="Boolean(errors.password)"
             :feedback="false" toggle-mask autocomplete="current-password" class="block w-full"
@@ -124,7 +229,7 @@ const submit = handleSubmit(async (values) => {
       </div>
 
       <Message v-if="credentialError" severity="error">{{ credentialError }}</Message>
-      <Button type="submit" :label="t('auth.login')" icon="pi pi-sign-in" :loading="submitting" />
+      <Button type="submit" :label="t('auth.login')" size="large" icon="pi pi-sign-in" :loading="submitting" />
       <p class="m-0 text-center text-xs text-muted">{{ t('footer.copyright') }}</p>
     </form>
   </div>

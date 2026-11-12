@@ -6,44 +6,52 @@ import type { ScanLog } from '@/types'
 /** Append-only CSV under Documents/scanInOutV2 — survives UI limits and delete-all. */
 export const SCAN_LIVE_LOG_PATH = 'scanInOutV2/scan-live-log.csv'
 
-const HEADER = 'Barcode,Type,DateNow\n'
+const HEADER = 'Location,Box,DateNow,UserId\n'
 
 function csvCell(value: string): string {
   if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`
   return value
 }
 
-function lineFor(item: Pick<ScanLog, 'value' | 'direction' | 'createdAt'>): string {
-  return `${csvCell(item.value)},${item.direction},${formatDateTime(item.createdAt)}\n`
+function userIdFor(item: Pick<ScanLog, 'userCode' | 'userEmail'>): string {
+  return item.userCode?.trim() || item.userEmail?.trim() || ''
 }
 
-async function readExisting(): Promise<string> {
+function lineFor(
+  item: Pick<ScanLog, 'value' | 'location' | 'createdAt' | 'userCode' | 'userEmail'>,
+): string {
+  return `${csvCell(item.location || '')},${csvCell(item.value)},${formatDateTime(item.createdAt)},${csvCell(userIdFor(item))}\n`
+}
+
+async function ensureLiveLogFile(): Promise<void> {
   try {
-    const result = await Filesystem.readFile({
+    await Filesystem.stat({
       path: SCAN_LIVE_LOG_PATH,
       directory: Directory.Documents,
-      encoding: Encoding.UTF8,
     })
-    return String(result.data ?? '')
   } catch {
-    return ''
-  }
-}
-
-/** Best-effort append; never throws to the scan flow. */
-export async function appendScanLiveLog(
-  item: Pick<ScanLog, 'value' | 'direction' | 'createdAt'>,
-): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return
-  try {
-    const existing = await readExisting()
-    const data = existing ? `${existing}${lineFor(item)}` : `${HEADER}${lineFor(item)}`
     await Filesystem.writeFile({
       path: SCAN_LIVE_LOG_PATH,
-      data,
+      data: HEADER,
       directory: Directory.Documents,
       encoding: Encoding.UTF8,
       recursive: true,
+    })
+  }
+}
+
+/** Best-effort true append; never throws to the scan flow. */
+export async function appendScanLiveLog(
+  item: Pick<ScanLog, 'value' | 'location' | 'createdAt' | 'userCode' | 'userEmail'>,
+): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    await ensureLiveLogFile()
+    await Filesystem.appendFile({
+      path: SCAN_LIVE_LOG_PATH,
+      data: lineFor(item),
+      directory: Directory.Documents,
+      encoding: Encoding.UTF8,
     })
   } catch {
     // ignore disk / permission errors

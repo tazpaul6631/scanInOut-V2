@@ -54,9 +54,9 @@ router.beforeEach((to) => {
     if (auth.isLoggedIn && to.name === 'login') return homePathForShell()
     return true
   }
-  // if (!auth.isLoggedIn) {
-  //   return { name: 'login', query: { redirect: to.fullPath } }
-  // }
+  if (!auth.isLoggedIn) {
+    return { name: 'login', query: { redirect: to.fullPath } }
+  }
   return true
 })
 

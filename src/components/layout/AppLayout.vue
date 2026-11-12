@@ -163,8 +163,8 @@ const title = computed(() =>
         <div v-if="webIconRail" class="sidebar-rail-spacer" aria-hidden="true" />
         <aside class="sidebar" :class="{ open, hover: webIconRail && hoverOpen }" @mouseenter="onSidebarEnter"
           @mouseleave="onSidebarLeave" @click.stop>
-          <RouterLink :to="homeTo" class="brand brand-btn"
-            :title="hoverOpen ? undefined : t('app.name')" @click="closeSidebar">
+          <RouterLink :to="homeTo" class="brand brand-btn" :title="hoverOpen ? undefined : t('app.name')"
+            @click="closeSidebar">
             <img class="brand-mark" src="/logo-icon.jpg" :alt="t('app.name')" />
             <div>
               <h1>{{ t('app.name') }}</h1>
@@ -197,7 +197,7 @@ const title = computed(() =>
               <Tag v-if="fromApiRunning" class="sync-from-api-badge max-w-[min(16rem,42vw)] overflow-hidden"
                 severity="info" :value="t('dashboard.syncFromApiRunning', { batch: fromApiBatch, n: fromApiTotal })" />
               <LocaleSelect ref="localeSelect" :compact="shell === 'mobile'" />
-              <!-- <UserMenu ref="userMenu" :compact="shell === 'mobile'" /> -->
+              <UserMenu ref="userMenu" :compact="shell === 'mobile'" />
             </div>
           </header>
           <section class="content">

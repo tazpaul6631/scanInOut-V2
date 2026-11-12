@@ -36,13 +36,13 @@ const displayCode = computed(() => auth.session?.code?.trim() || auth.session?.e
 const initials = computed(() => personInitials(displayName.value))
 
 const items = computed<MenuItem[]>(() => [
-  {
-    label: t('auth.changePassword'),
-    icon: 'pi pi-key',
-    class: 'user-menu-item user-menu-item-change-password',
-    command: openChangePassword,
-  },
-  { separator: true },
+  // {
+  //   label: t('auth.changePassword'),
+  //   icon: 'pi pi-key',
+  //   class: 'user-menu-item user-menu-item-change-password',
+  //   command: openChangePassword,
+  // },
+  // { separator: true },
   {
     label: t('auth.logout'),
     icon: 'pi pi-sign-out',

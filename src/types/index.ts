@@ -48,7 +48,11 @@ export interface ScanLog {
   value: string
   format: string | null
   direction: ScanDirection
+  location: string
+  userCode: string | null
+  userEmail: string | null
   createdAt: number
+  synced: boolean
 }
 
 export interface ScaleReading {

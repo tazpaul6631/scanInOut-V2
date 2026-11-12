@@ -1,12 +1,24 @@
 import { onMounted, onUnmounted } from 'vue'
 
-const WEDGE_INPUT_IDS = new Set(['manual-input', 'wedge-input'])
+const WEDGE_INPUT_IDS = new Set(['manual-input', 'wedge-input', 'location-input'])
+
+export interface BarcodeWedgeOptions {
+  /** Extra input ids treated as wedge targets (e.g. login email). */
+  allowInputIds?: string[]
+  /** Clear the focused wedge field after a successful scan. Default true. */
+  clearField?: boolean
+}
 
 /**
  * Captures PDA laser keyboard-wedge scans (HID keystrokes ending with Enter).
  * Ignores typing in other inputs/textareas so forms stay usable.
  */
-export function useBarcodeWedge(onScan: (value: string) => void | Promise<void>) {
+export function useBarcodeWedge(
+  onScan: (value: string) => void | Promise<void>,
+  options: BarcodeWedgeOptions = {},
+) {
+  const allowedIds = new Set([...WEDGE_INPUT_IDS, ...(options.allowInputIds ?? [])])
+  const clearField = options.clearField !== false
   let buffer = ''
   let lastAt = 0
 
@@ -20,7 +32,7 @@ export function useBarcodeWedge(onScan: (value: string) => void | Promise<void>)
     const tag = target?.tagName?.toUpperCase()
     const isEditable =
       tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(target?.isContentEditable)
-    const isWedgeField = Boolean(target?.id && WEDGE_INPUT_IDS.has(target.id))
+    const isWedgeField = Boolean(target?.id && allowedIds.has(target.id))
 
     if (isEditable && !isWedgeField) return
 
@@ -32,7 +44,7 @@ export function useBarcodeWedge(onScan: (value: string) => void | Promise<void>)
       if (!value) return
       event.preventDefault()
       void onScan(value)
-      if (isWedgeField && target instanceof HTMLInputElement) {
+      if (clearField && isWedgeField && target instanceof HTMLInputElement) {
         target.value = ''
         target.dispatchEvent(new Event('input', { bubbles: true }))
       }
