@@ -11,18 +11,17 @@ import {
 import { toLocalIso } from '@/utils/format'
 
 function sessionFromUser(user: ViewValidateUser): Session | null {
-  const email = user.email?.trim()
-  if (!email) return null
+  const code = user.code?.trim()
+  const name = user.name?.trim()
+  const identity = code || name
+  if (!identity) return null
   return {
-    email,
+    email: identity,
     loggedInAt: Date.now(),
     userId: user.id,
-    code: user.code ?? undefined,
-    name: user.name ?? undefined,
-    roleId: user.roleId,
-    roleName: user.roleName ?? undefined,
-    accessToken: user.accessToken ?? undefined,
-    refreshToken: user.refreshToken ?? undefined,
+    code: code || undefined,
+    name: name || undefined,
+    isAdmin: user.isAdmin,
   }
 }
 
@@ -38,9 +37,9 @@ export const useAuthStore = defineStore('auth', () => {
     loaded.value = true
   }
 
-  async function login(email: string, password: string): Promise<ApiResponse<ViewValidateUser>> {
+  async function login(code: string, password: string): Promise<ApiResponse<ViewValidateUser>> {
     const res = await userValidate({
-      email: email.trim(),
+      code: code.trim(),
       password,
       loginAt: toLocalIso(Date.now()),
     })

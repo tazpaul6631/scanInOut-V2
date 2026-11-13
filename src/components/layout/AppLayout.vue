@@ -130,23 +130,23 @@ const navGroups = computed(() => {
       label: t('nav.web'),
       items: [
         { to: '/', icon: 'pi pi-home', label: t('nav.dashboard') },
-        { to: '/users', icon: 'pi pi-users', label: t('nav.users') },
+        // { to: '/users', icon: 'pi pi-users', label: t('nav.users') },
         { to: '/scan', icon: 'pi pi-qrcode', label: t('nav.scan') },
-        { to: '/scale', icon: 'pi pi-sliders-h', label: t('nav.scale') },
-        { to: '/hardware', icon: 'pi pi-wifi', label: t('nav.hardware') },
-        { to: '/media', icon: 'pi pi-camera', label: t('nav.media') },
-        { to: '/sync', icon: 'pi pi-sync', label: t('nav.sync') },
-        { to: '/settings', icon: 'pi pi-cog', label: t('nav.settings') },
+        // { to: '/scale', icon: 'pi pi-sliders-h', label: t('nav.scale') },
+        // { to: '/hardware', icon: 'pi pi-wifi', label: t('nav.hardware') },
+        // { to: '/media', icon: 'pi pi-camera', label: t('nav.media') },
+        // { to: '/sync', icon: 'pi pi-sync', label: t('nav.sync') },
+        // { to: '/settings', icon: 'pi pi-cog', label: t('nav.settings') },
       ],
     },
-    {
-      key: 'app',
-      label: t('nav.app'),
-      items: [
-        { to: '/app/tablet', icon: 'pi pi-tablet', label: t('nav.tablet') },
-        { to: '/app/mobile/scan', icon: 'pi pi-mobile', label: t('nav.mobile') },
-      ],
-    },
+    // {
+    //   key: 'app',
+    //   label: t('nav.app'),
+    //   items: [
+    //     { to: '/app/tablet', icon: 'pi pi-tablet', label: t('nav.tablet') },
+    //     { to: '/app/mobile/scan', icon: 'pi pi-mobile', label: t('nav.mobile') },
+    //   ],
+    // },
   ]
 })
 
@@ -169,7 +169,7 @@ const title = computed(() =>
             @click="closeSidebar">
             <img class="brand-mark" src="/logo-icon.jpg" :alt="t('app.name')" />
             <div>
-              <h1>{{ t('app.name') }}</h1>
+              <h1>{{ !webIconRail ? t('app.webtitle') : t('app.name') }}</h1>
               <!-- <p>{{ settings.current.companyName }}</p> -->
             </div>
           </RouterLink>

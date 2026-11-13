@@ -13,3 +13,4 @@ export type {
 } from './user'
 export type { ViewRole } from './role'
 export type { ViewCategoryBase } from './category'
+export type { ViewScanResult, ScanQueryResultRequest, ScanQueryResult } from './scan'

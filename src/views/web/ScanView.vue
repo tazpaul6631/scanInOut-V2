@@ -1,46 +1,29 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
+import dayjs from 'dayjs'
+import DatePicker from 'primevue/datepicker'
 import Button from '@/components/ui/AppButton.vue'
 import InputText from '@/components/ui/AppInputText.vue'
-import FloatLabel from '@/components/ui/AppFloatLabel.vue'
+import Select from '@/components/ui/AppSelect.vue'
 import DataTable from '@/components/ui/AppDataTable.vue'
 import Column from '@/components/ui/AppColumn.vue'
-import Message from '@/components/ui/AppMessage.vue'
-import Tag from '@/components/ui/AppTag.vue'
-import { useScan } from '@/composables/useScan'
-import { useBarcodeWedge } from '@/composables/useBarcodeWedge'
-import { listScanLogs } from '@/services/repositories/scans'
-import { findProductByBarcode } from '@/services/repositories/products'
-import { formatDateTime } from '@/utils/format'
-import { nfcStatus, openNfcSettings } from '@/adapters/nfc'
-import { detectDeviceShell, isNative, type DeviceShell } from '@/adapters/platform'
-import type { Product, ScanDirection, ScanLog } from '@/types'
+import { queryScanResult } from '@/services/api/scan'
+import { queryScanTypeBaseList, queryWarehouseBaseList } from '@/services/api/category'
+import { readApiFailure } from '@/services/api/error'
+import { exportWebScanWorkbook } from '@/services/scan-web-export'
+import { formatDateTime, toLocalFileStamp } from '@/utils/format'
+import { detectDeviceShell, type DeviceShell } from '@/adapters/platform'
+import type { ScanQueryResultRequest, ViewCategoryBase, ViewScanResult } from '@/types/api'
 
 const { t } = useI18n()
 const toast = useToast()
-const direction = ref<ScanDirection>('in')
-const {
-  last,
-  nfcOn,
-  error,
-  nativeScan,
-  liveScan,
-  stopLive,
-  startNfc,
-  stopNfc,
-  remember,
-} = useScan(direction)
-const logs = ref<ScanLog[]>([])
-const product = ref<Product | null>(null)
-const manual = ref('')
-const nfc = ref('...')
-const live = ref(false)
+const rows = ref<ViewScanResult[]>([])
+const loading = ref(false)
+const exporting = ref(false)
 const shell = ref<DeviceShell>(detectDeviceShell())
 const compact = computed(() => shell.value === 'mobile')
-const nfcLabel = computed(() => (nfcOn.value ? t('scan.nfcStop') : t('scan.nfcStart')))
-const liveLabel = computed(() => (live.value ? t('scan.liveStop') : t('scan.liveStart')))
 const paginatorTemplate = computed(() => {
   if (shell.value === 'mobile') return 'PrevPageLink CurrentPageReport NextPageLink'
   if (shell.value === 'tablet') return 'PrevPageLink PageLinks NextPageLink RowsPerPageDropdown'
@@ -52,201 +35,256 @@ const pageReport = computed(() =>
     : 'Showing {first} to {last} of {totalRecords} entries',
 )
 
+function emptyFilterForm(): ScanQueryResultRequest {
+  return {
+    locationCode: null,
+    boxCode: null,
+    method: null,
+    scanType: null,
+    warehouse: null,
+    scanBy: null,
+  }
+}
+
+const filterForm = ref<ScanQueryResultRequest>(emptyFilterForm())
+const filterScanAt = ref<Date[] | null>(null)
+
+const methodOptions = [
+  { label: 'Input', value: 'Input' as const },
+  { label: 'Laser', value: 'Laser' as const },
+]
+
+const warehouseOptions = ref<{ label: string; value: string }[]>([])
+const scanTypeOptions = ref<{ label: string; value: string }[]>([])
+const warehouseLoading = ref(false)
+const scanTypeLoading = ref(false)
+
+function isCompleteScanAtRange(value: Date[] | null | undefined): value is [Date, Date] {
+  return Boolean(value?.[0] && value?.[1])
+}
+
+function normalizeScanAtRange(
+  value: Date | Date[] | (Date | null)[] | null | undefined,
+): Date[] | null {
+  if (!value) return null
+  if (!Array.isArray(value)) return [value]
+  const from = value[0] ?? null
+  const to = value[1] ?? null
+  if (!from && !to) return null
+  return [from, to].filter((d): d is Date => d instanceof Date)
+}
+
+const hasActiveFilter = computed(
+  () =>
+    isCompleteScanAtRange(filterScanAt.value) ||
+    Object.values(filterForm.value).some((value) => Boolean(String(value ?? '').trim())),
+)
+
+function toSelectOptions(rows: ViewCategoryBase[] | null | undefined) {
+  return (rows ?? [])
+    .map((row) => {
+      const name = row.name?.trim() || row.code?.trim()
+      if (!name) return null
+      return { label: name, value: name }
+    })
+    .filter((row): row is { label: string; value: string } => Boolean(row))
+}
+
+async function loadWarehouseOptions() {
+  if (warehouseLoading.value) return
+  warehouseLoading.value = true
+  try {
+    const res = await queryWarehouseBaseList()
+    warehouseOptions.value = toSelectOptions(res.data)
+  } catch {
+    warehouseOptions.value = []
+  } finally {
+    warehouseLoading.value = false
+  }
+}
+
+async function loadScanTypeOptions() {
+  if (scanTypeLoading.value) return
+  scanTypeLoading.value = true
+  try {
+    const res = await queryScanTypeBaseList()
+    scanTypeOptions.value = toSelectOptions(res.data)
+  } catch {
+    scanTypeOptions.value = []
+  } finally {
+    scanTypeLoading.value = false
+  }
+}
+
 function refreshShell() {
   shell.value = detectDeviceShell()
 }
 
-async function reload() {
-  logs.value = await listScanLogs()
-}
-
-function focusManual() {
-  void nextTick(() => {
-    document.getElementById('manual-input')?.focus()
-  })
-}
-
-async function afterScan() {
-  if (last.value) {
-    product.value = await findProductByBarcode(last.value.value)
+function buildQueryParams(): ScanQueryResultRequest {
+  const params: ScanQueryResultRequest = {}
+  const form = filterForm.value
+  const locationCode = form.locationCode?.trim()
+  const boxCode = form.boxCode?.trim()
+  const method = form.method
+  const scanType = form.scanType?.trim()
+  const warehouse = form.warehouse?.trim()
+  const scanBy = form.scanBy?.trim()
+  if (locationCode) params.locationCode = locationCode
+  if (boxCode) params.boxCode = boxCode
+  if (method === 'Input' || method === 'Laser') params.method = method
+  if (scanType) params.scanType = scanType
+  if (warehouse) params.warehouse = warehouse
+  if (scanBy) params.scanBy = scanBy
+  if (isCompleteScanAtRange(filterScanAt.value)) {
+    const [from, to] = filterScanAt.value
+    params.scanAtFrom = `${dayjs(from).format('YYYY-MM-DD')}T00:00:00`
+    params.scanAtTo = `${dayjs(to).format('YYYY-MM-DD')}T23:59:59`
   }
-  await reload()
-  focusManual()
+  return params
 }
 
-async function saveCode(value: string, kind: 'manual' | 'barcode', format: string) {
-  const code = value.trim()
-  if (!code) return
-  await remember({ value: code, format, kind, direction: direction.value })
-  manual.value = ''
-  await afterScan()
+function onScanAtRangeUpdate(value: Date | Date[] | (Date | null)[] | null | undefined) {
+  const next = normalizeScanAtRange(value)
+  filterScanAt.value = next
+  if (!next || isCompleteScanAtRange(next)) void load()
 }
 
-useBarcodeWedge(async (value) => {
-  await saveCode(value, 'barcode', 'WEDGE')
-})
+async function load() {
+  loading.value = true
+  try {
+    const res = await queryScanResult(buildQueryParams())
+    if (!res.success) {
+      rows.value = []
+      toast.add({ severity: 'error', summary: res.message || t('scan.loadError'), life: 3500 })
+      return
+    }
+    rows.value = res.data?.items ?? []
+  } catch (err) {
+    rows.value = []
+    toast.add({ severity: 'error', summary: readApiFailure(err) || t('scan.loadError'), life: 3500 })
+  } finally {
+    loading.value = false
+  }
+}
 
-onMounted(async () => {
+function clearFilters() {
+  filterForm.value = emptyFilterForm()
+  filterScanAt.value = null
+  void load()
+}
+
+async function exportExcel() {
+  if (!rows.value.length) {
+    toast.add({ severity: 'warn', summary: t('scan.emptyTitle'), life: 2500 })
+    return
+  }
+  exporting.value = true
+  try {
+    const filename = `scan-logs-${toLocalFileStamp()}.xlsx`
+    const n = await exportWebScanWorkbook(filename, rows.value)
+    toast.add({
+      severity: 'success',
+      summary: t('sync.exported', { file: filename }),
+      detail: t('scan.totalCount', { n }),
+      life: 3500,
+    })
+  } catch (err) {
+    toast.add({
+      severity: 'error',
+      summary: err instanceof Error ? err.message : String(err),
+      life: 3500,
+    })
+  } finally {
+    exporting.value = false
+  }
+}
+
+onMounted(() => {
   refreshShell()
   window.addEventListener('resize', refreshShell)
-  nfc.value = await nfcStatus()
-  await reload()
-  focusManual()
+  void load()
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', refreshShell)
 })
-
-async function toggleLive() {
-  if (live.value) {
-    await stopLive()
-    live.value = false
-    focusManual()
-    return
-  }
-  live.value = true
-  await liveScan('live-scanner', async () => {
-    await afterScan()
-  })
-}
-
-async function doNative() {
-  await nativeScan()
-  await afterScan()
-}
-
-async function saveManual() {
-  await saveCode(manual.value, 'manual', 'MANUAL')
-}
-
-function setDirection(next: ScanDirection) {
-  direction.value = next
-  focusManual()
-}
-
-function nfcToast(summary: string) {
-  toast.add({ severity: 'warn', summary, life: 3000, closable: false })
-}
-
-async function toggleNfc() {
-  if (nfcOn.value) {
-    await stopNfc()
-    nfc.value = await nfcStatus()
-    await reload()
-    focusManual()
-    return
-  }
-
-  let status: string
-  try {
-    status = await nfcStatus()
-  } catch {
-    nfcToast(t('errors.noNfc'))
-    return
-  }
-  nfc.value = status
-
-  if (status === 'NO_NFC') {
-    nfcToast(t('errors.noNfc'))
-    return
-  }
-
-  if (status === 'NFC_DISABLED') {
-    nfcToast(t('scan.nfcDisabled'))
-    try {
-      await openNfcSettings()
-    } catch {
-      // toast already shown
-    }
-    return
-  }
-
-  try {
-    await startNfc()
-    nfc.value = await nfcStatus()
-    await reload()
-  } catch (err) {
-    nfcToast(err instanceof Error ? err.message : t('errors.noNfc'))
-  }
-}
 </script>
 
 <template>
   <div class="page-fill">
-    <div class="mb-2.5 flex shrink-0 items-end justify-between gap-3 max-md:flex-col max-md:items-stretch">
-      <div class="min-w-0">
-        <h2 class="m-0 mb-1 text-[26px] max-lg:text-[22px] max-md:text-xl">{{ t('scan.subtitle') }}</h2>
-        <p class="m-0 text-sm text-muted">{{ t('scan.wedgeHint') }}</p>
-      </div>
-    </div>
-
-    <div class="mb-4 grid shrink-0 grid-cols-2 gap-3.5 max-md:grid-cols-1">
-      <div class="rounded-2xl border border-line bg-white p-2.5 shadow-panel">
-        <div class="mb-3 flex flex-wrap items-center gap-2">
-          <span class="text-sm font-semibold text-ink">{{ t('scan.direction') }}</span>
-          <Button
-            :label="t('scan.directionIn')"
-            :severity="direction === 'in' ? 'success' : 'secondary'"
-            :outlined="direction !== 'in'"
-            @click="setDirection('in')"
-          />
-          <Button
-            :label="t('scan.directionOut')"
-            :severity="direction === 'out' ? 'warn' : 'secondary'"
-            :outlined="direction !== 'out'"
-            @click="setDirection('out')"
-          />
-        </div>
-        <div class="mb-3 flex flex-wrap gap-2">
-          <Button v-if="isNative()" :label="compact ? undefined : t('scan.native')" icon="pi pi-camera"
-            :aria-label="t('scan.native')" @click="doNative" />
-          <Button :label="compact ? undefined : nfcLabel" icon="pi pi-wifi" :aria-label="nfcLabel" @click="toggleNfc" />
-          <Button :label="compact ? undefined : liveLabel" icon="pi pi-video" :aria-label="liveLabel"
-            @click="toggleLive" />
-        </div>
-        <Message v-if="error" severity="warn">{{ error }}</Message>
-        <p>{{ t('scan.nfcStatus') }}:
-          <Tag :value="nfc" />
-        </p>
-        <div v-show="live" id="live-scanner" class="min-h-[280px] w-full max-w-[420px] overflow-hidden rounded-2xl bg-neutral-900" />
-        <div v-if="last" class="mt-3 rounded-2xl border border-line bg-[#f4faf7] p-2.5 shadow-panel">
-          <strong>{{ t('scan.result') }}:</strong> {{ last.value }}
-          <div>{{ last.kind }} · {{ last.format }} · {{ last.direction === 'out' ? t('scan.directionOut') : t('scan.directionIn') }}</div>
-          <div v-if="product">{{ t('scan.matched', { sku: product.sku, name: product.name }) }}</div>
-          <div v-else>{{ t('scan.unmatched') }}</div>
-        </div>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <FloatLabel class="min-w-32 flex-1">
-            <InputText id="manual-input" name="manual-input" v-model="manual" class="w-full" autocomplete="off" />
-            <label for="manual-input">{{ t('scan.manualPlaceholder') }}</label>
-          </FloatLabel>
-          <Button :label="t('common.save')" @click="saveManual" />
-        </div>
-      </div>
-    </div>
-
     <div class="page-fill-panel col-span-full rounded-2xl border border-line bg-white p-2.5 shadow-panel">
-      <h3 class="mb-3 shrink-0">{{ t('scan.history') }}</h3>
+      <div class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
+        <h3 class="m-0">{{ t('scan.history') }}</h3>
+        <div class="flex flex-wrap items-center gap-2">
+          <Button :label="compact ? undefined : t('common.clearFilter')" :ripple="false" icon="pi pi-filter-slash"
+            :disabled="!hasActiveFilter" :aria-label="t('common.clearFilter')" @click="clearFilters" />
+          <Button :label="compact ? undefined : t('sync.excel')" :ripple="false" icon="pi pi-file-excel"
+            :loading="exporting" :disabled="!rows.length || exporting" :aria-label="t('sync.excel')"
+            @click="exportExcel" />
+        </div>
+      </div>
       <div class="table-wrap-fill w-full max-w-full overflow-x-auto">
-        <DataTable :value="logs" paginator :rows="8" :rows-per-page-options="[5, 10, 20]" scrollable
-          scroll-height="flex" :paginator-template="paginatorTemplate" :current-page-report-template="pageReport">
-          <Column field="direction" :header="t('scan.direction')">
-            <template #body="{ data }">
-              <Tag
-                :value="data.direction === 'out' ? t('scan.directionOut') : t('scan.directionIn')"
-                :severity="data.direction === 'out' ? 'warn' : 'success'"
-              />
+        <DataTable :value="rows" data-key="id" paginator :rows="50" :rows-per-page-options="[50, 100, 200]" scrollable
+          filter-display="row" scroll-height="flex" :paginator-template="paginatorTemplate"
+          :current-page-report-template="pageReport">
+          <Column field="locationCode" :header="t('scan.location')" :show-filter-menu="false">
+            <template #body="{ data }">{{ data.locationCode }}</template>
+            <template #filter>
+              <InputText v-model="filterForm.locationCode" class="w-full" size="small" type="text"
+                :placeholder="t('scan.filterPlaceholderLocationCode')" @keydown.enter="load" />
             </template>
           </Column>
-          <Column field="kind" :header="t('scan.kind')" />
-          <Column field="value" :header="t('scan.value')" />
-          <Column field="format" :header="t('scan.format')" />
-          <Column :header="t('scan.time')">
-            <template #body="{ data }">{{ formatDateTime(data.createdAt) }}</template>
+          <Column field="boxCode" :header="t('scan.code')" :show-filter-menu="false">
+            <template #body="{ data }">{{ data.boxCode }}</template>
+            <template #filter>
+              <InputText v-model="filterForm.boxCode" class="w-full" size="small" type="text"
+                :placeholder="t('scan.filterPlaceholderBoxCode')" @keydown.enter="load" />
+            </template>
+          </Column>
+          <Column field="method" :header="t('scan.method')" :show-filter-menu="false">
+            <template #body="{ data }">{{ data.method }}</template>
+            <template #filter>
+              <Select v-model="filterForm.method" class="w-full" size="small" :options="methodOptions"
+                option-label="label" option-value="value" :placeholder="t('scan.filterPlaceholderMethod')" show-clear
+                @update:model-value="load" />
+            </template>
+          </Column>
+          <Column field="scanType" :header="t('scan.scanType')" :show-filter-menu="false">
+            <template #body="{ data }">{{ data.scanType }}</template>
+            <template #filter>
+              <Select v-model="filterForm.scanType" class="w-full" size="small" :options="scanTypeOptions"
+                option-label="label" option-value="value" :loading="scanTypeLoading"
+                :placeholder="t('scan.filterPlaceholderscanType')" show-clear @show="loadScanTypeOptions"
+                @update:model-value="load" />
+            </template>
+          </Column>
+          <Column field="warehouse" :header="t('scan.warehouse')" :show-filter-menu="false">
+            <template #body="{ data }">{{ data.warehouse }}</template>
+            <template #filter>
+              <Select v-model="filterForm.warehouse" class="w-full" size="small" :options="warehouseOptions"
+                option-label="label" option-value="value" :loading="warehouseLoading"
+                :placeholder="t('scan.filterPlaceholderWarehouse')" show-clear @show="loadWarehouseOptions"
+                @update:model-value="load" />
+            </template>
+          </Column>
+          <Column field="scanBy" :header="t('scan.user')" :show-filter-menu="false">
+            <template #body="{ data }">{{ data.scanBy }}</template>
+            <template #filter>
+              <InputText v-model="filterForm.scanBy" class="w-full" size="small" type="text"
+                :placeholder="t('scan.filterPlaceholderScanBy')" @keydown.enter="load" />
+            </template>
+          </Column>
+          <Column field="scanAt" :header="t('scan.time')" :show-filter-menu="false">
+            <template #body="{ data }">{{ formatDateTime(data.scanAt) }}</template>
+            <template #filter>
+              <DatePicker v-model="filterScanAt" selection-mode="range" :manual-input="false" class="w-full"
+                size="small" date-format="dd/mm/yy" show-icon show-clear :placeholder="t('scan.filterDate')"
+                @update:model-value="onScanAtRangeUpdate" />
+            </template>
           </Column>
           <template #empty>
-            <div class="table-empty flex min-h-full flex-col items-center justify-center gap-2 px-4 py-10 text-center text-muted">
+            <div
+              class="table-empty flex min-h-full flex-col items-center justify-center gap-2 px-4 py-10 text-center text-muted">
               <i class="pi pi-inbox text-[1.75rem]" />
               <p class="m-0 font-semibold text-ink">{{ t('scan.emptyTitle') }}</p>
               <p class="m-0">{{ t('scan.emptyHint') }}</p>

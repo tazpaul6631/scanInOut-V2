@@ -75,6 +75,7 @@ export interface Session {
   name?: string
   roleId?: string
   roleName?: string
+  isAdmin?: boolean
   accessToken?: string
   refreshToken?: string
   warehouse?: string

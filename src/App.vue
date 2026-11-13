@@ -101,7 +101,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Toast position="bottom-center" :pt="{ closeButton: { style: { display: 'none' } } }" />
+  <Toast position="top-right" :pt="{ closeButton: { style: { display: 'none' } } }" />
   <ConfirmDialog :closable="false" dismissable-mask />
   <Dialog :visible="unauthorized" modal :closable="false" :dismissable-mask="false" :close-on-escape="false"
     :header="t('auth.sessionExpiredTitle')" :style="{ width: 'min(420px, 96vw)' }">

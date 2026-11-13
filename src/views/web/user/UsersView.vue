@@ -31,7 +31,6 @@ const editingId = ref<string | null>(null)
 const shell = ref<DeviceShell>(detectDeviceShell())
 const compact = computed(() => shell.value === 'mobile')
 const showCode = computed(() => shell.value !== 'mobile')
-const showEmailColumn = computed(() => shell.value !== 'mobile')
 const showActive = computed(() => shell.value !== 'mobile')
 const showUpdated = computed(() => shell.value === 'web')
 const paginatorTemplate = computed(() => {
@@ -97,7 +96,7 @@ async function onSaved() {
 function remove(user: ViewUser) {
   confirm.require({
     header: t('user.deleteTitle'),
-    message: t('user.deleteMessage', { name: user.name || user.email || user.code }),
+    message: t('user.deleteMessage', { name: user.name || user.code }),
     acceptLabel: t('common.delete'),
     rejectLabel: t('common.cancel'),
     acceptIcon: 'pi pi-trash',
@@ -158,15 +157,15 @@ onUnmounted(() => {
           <Button :label="compact ? undefined : t('common.clearFilter')" :ripple="false" icon="pi pi-filter-slash"
             :loading="loading" :disabled="!q.trim()" :aria-label="t('common.clearFilter')" @click="clearFilter" />
         </div>
-        <div class="shrink-0 max-md:w-full max-md:[&_.p-button]:w-full">
+        <div v-if="auth.session?.isAdmin" class="shrink-0 max-md:w-full max-md:[&_.p-button]:w-full">
           <Button :label="t('user.add')" :ripple="false" icon="pi pi-plus" @click="openCreate" />
         </div>
       </div>
       <div class="table-wrap-fill w-full max-w-full overflow-x-auto">
-        <DataTable :value="tableRows" paginator :rows="10" :rows-per-page-options="[5, 10, 20]" striped-rows row-hover
-          scrollable scroll-height="flex" :paginator-template="paginatorTemplate"
+        <DataTable :value="tableRows" data-key="id" paginator :rows="10" :rows-per-page-options="[5, 10, 20]"
+          striped-rows row-hover scrollable scroll-height="flex" :paginator-template="paginatorTemplate"
           :current-page-report-template="pageReport">
-          <Column v-if="showCode" field="code" :header="t('user.code')" :sortable="!loading">
+          <Column field="code" :header="t('user.code')" :sortable="!loading" :hidden="!showCode">
             <template #body="{ data }">
               <Skeleton v-if="loading" width="60%" height="1rem" />
               <span v-else>{{ data.code }}</span>
@@ -177,30 +176,24 @@ onUnmounted(() => {
               <Skeleton v-if="loading" width="65%" height="1rem" />
               <div v-else class="flex min-w-0 flex-col gap-0.5">
                 <span>{{ data.name }}</span>
-                <small v-if="compact" class="text-muted [overflow-wrap:anywhere]">{{ data.email }}</small>
+                <small v-if="compact" class="text-muted [overflow-wrap:anywhere]">{{ data.code }}</small>
               </div>
             </template>
           </Column>
-          <Column v-if="showEmailColumn" field="email" :header="t('user.email')" :sortable="!loading">
-            <template #body="{ data }">
-              <Skeleton v-if="loading" width="70%" height="1rem" />
-              <span v-else>{{ data.email }}</span>
-            </template>
-          </Column>
-          <Column v-if="showActive" :header="t('user.active')">
+          <Column :header="t('user.active')" :hidden="!showActive">
             <template #body="{ data }">
               <Skeleton v-if="loading" width="3rem" height="1.25rem" />
               <Tag v-else :value="data.isActive ? t('common.yes') : t('common.no')"
                 :severity="data.isActive ? 'success' : 'secondary'" />
             </template>
           </Column>
-          <Column v-if="showUpdated" :header="t('user.updated')">
+          <Column :header="t('user.updated')" :hidden="!showUpdated">
             <template #body="{ data }">
               <Skeleton v-if="loading" width="50%" height="1rem" />
               <span v-else>{{ formatDateTime(data.updatedAt) }}</span>
             </template>
           </Column>
-          <Column :header="t('common.actions')" class="text-center">
+          <Column :header="t('common.actions')" class="text-center" :hidden="!auth.session?.isAdmin">
             <template #body="{ data }">
               <Skeleton v-if="loading" width="4rem" height="2rem" />
               <div v-else class="flex justify-evenly">
@@ -212,7 +205,8 @@ onUnmounted(() => {
             </template>
           </Column>
           <template #empty>
-            <div class="table-empty flex min-h-full flex-col items-center justify-center gap-2 px-4 py-10 text-center text-muted">
+            <div
+              class="table-empty flex min-h-full flex-col items-center justify-center gap-2 px-4 py-10 text-center text-muted">
               <i class="pi pi-inbox text-[1.75rem]" />
               <p class="m-0 font-semibold text-ink">{{ t('user.emptyTitle') }}</p>
               <p class="m-0">{{ t('user.emptyHint') }}</p>

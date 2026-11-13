@@ -14,7 +14,7 @@ import {
 } from '@/services/repositories/scans'
 import { toLocalFileStamp } from '@/utils/format'
 
-export const SCAN_ARCHIVE_THRESHOLD = 5000
+export const SCAN_ARCHIVE_THRESHOLD = 30000
 
 const EXPORT_PAGE_SIZE = 1000
 const SYNC_CHUNK = 500

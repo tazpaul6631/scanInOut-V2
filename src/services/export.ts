@@ -239,7 +239,7 @@ export async function exportScanWorkbookPaged(
   const headerRow = chiTiet.getRow(1)
   headerRow.font = { bold: true, color: { argb: 'FFC00000' } }
   headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
-  headerRow.height = 45
+  headerRow.height = 50
 
   let offset = 0
   let total = 0

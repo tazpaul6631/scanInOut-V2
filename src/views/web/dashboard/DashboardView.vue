@@ -38,7 +38,7 @@ onMounted(refreshCounts)
 </script>
 
 <template>
-  <div class="mb-2.5 flex items-end justify-between gap-3 max-md:flex-col max-md:items-stretch max-md:[&_.p-button]:w-full">
+  <!-- <div class="mb-2.5 flex items-end justify-between gap-3 max-md:flex-col max-md:items-stretch max-md:[&_.p-button]:w-full">
     <div class="min-w-0">
       <h2 class="m-0 mb-1 text-[26px] max-lg:text-[22px] max-md:text-xl">{{ t('dashboard.subtitle', {
         store: isNative() ? t('dashboard.native') : t('dashboard.webOpfs'), platform:
@@ -77,5 +77,5 @@ onMounted(refreshCounts)
     <p><strong>{{ t('dashboard.lastBackup') }}:</strong> {{ formatDateTime(sync.lastBackupAt) }}</p>
     <p><strong>{{ t('dashboard.lastSync') }}:</strong> {{ formatDateTime(sync.lastSyncAt) }}</p>
     <p><strong>{{ t('dashboard.outbox') }}:</strong> {{ t('dashboard.outboxPending', { n: sync.pending }) }}</p>
-  </div>
+  </div> -->
 </template>

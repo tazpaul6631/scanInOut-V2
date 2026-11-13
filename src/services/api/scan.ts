@@ -1,6 +1,6 @@
 import { http } from '@/services/http'
 import { useAuthStore } from '@/stores/auth'
-import type { ApiResponse } from '@/types/api'
+import type { ApiResponse, ScanQueryResult, ScanQueryResultRequest } from '@/types/api'
 import type { ScanLog } from '@/types'
 import { toLocalIso } from '@/utils/format'
 
@@ -27,6 +27,11 @@ export function toScanApiItem(row: ScanLog, status = row.status ?? 0): ScanApiIt
     scanType: session?.scanType ?? '',
     warehouse: session?.warehouse ?? '',
   }
+}
+
+export async function queryScanResult(params: ScanQueryResultRequest = {}) {
+  const { data } = await http.post<ApiResponse<ScanQueryResult>>('/scan/src/queryresult', params)
+  return data
 }
 
 /** Online: single object via /scan/src/command. Sync batch: array via /sync/sc/syncsr. */

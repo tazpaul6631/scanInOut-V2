@@ -1,5 +1,5 @@
 export interface UserValidateRequest {
-  email: string
+  code: string
   password: string
   loginAt: string
 }
@@ -17,15 +17,10 @@ export interface ViewPlatformPermission {
 
 export interface ViewValidateUser {
   id: string
+  keyword?: string | null
   code?: string | null
-  email?: string | null
   name?: string | null
-  roleId: string
-  roleName?: string | null
-  avatar?: string | null
-  accessToken?: string | null
-  refreshToken?: string | null
-  permissions?: ViewPlatformPermission[] | null
+  isAdmin?: boolean
 }
 
 export interface UserQueryResultRequest {
