@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
+import type { DataTablePageEvent } from 'primevue/datatable'
 import dayjs from 'dayjs'
 import DatePicker from 'primevue/datepicker'
 import Button from '@/components/ui/AppButton.vue'
@@ -15,13 +16,22 @@ import { readApiFailure } from '@/services/api/error'
 import { exportWebScanWorkbook } from '@/services/scan-web-export'
 import { formatDateTime, toLocalFileStamp } from '@/utils/format'
 import { detectDeviceShell, type DeviceShell } from '@/adapters/platform'
-import type { ScanQueryResultRequest, ViewCategoryBase, ViewScanResult } from '@/types/api'
+import type {
+  ScanQueryResultRequest,
+  ViewCategoryBase,
+  ViewScanResult,
+  ViewWarehouseBase,
+} from '@/types/api'
 
 const { t } = useI18n()
 const toast = useToast()
 const rows = ref<ViewScanResult[]>([])
 const loading = ref(false)
 const exporting = ref(false)
+const page = ref(1)
+const pageSize = ref(50)
+const totalRecords = ref(0)
+const first = computed(() => (page.value - 1) * pageSize.value)
 const shell = ref<DeviceShell>(detectDeviceShell())
 const compact = computed(() => shell.value === 'mobile')
 const paginatorTemplate = computed(() => {
@@ -90,12 +100,22 @@ function toSelectOptions(rows: ViewCategoryBase[] | null | undefined) {
     .filter((row): row is { label: string; value: string } => Boolean(row))
 }
 
+function toWarehouseSelectOptions(rows: ViewWarehouseBase[] | null | undefined) {
+  return (rows ?? [])
+    .map((row) => {
+      const name = row.warehouseName?.trim() || row.warehouseCode?.trim()
+      if (!name) return null
+      return { label: name, value: name }
+    })
+    .filter((row): row is { label: string; value: string } => Boolean(row))
+}
+
 async function loadWarehouseOptions() {
   if (warehouseLoading.value) return
   warehouseLoading.value = true
   try {
     const res = await queryWarehouseBaseList()
-    warehouseOptions.value = toSelectOptions(res.data)
+    warehouseOptions.value = toWarehouseSelectOptions(res.data)
   } catch {
     warehouseOptions.value = []
   } finally {
@@ -140,13 +160,26 @@ function buildQueryParams(): ScanQueryResultRequest {
     params.scanAtFrom = `${dayjs(from).format('YYYY-MM-DD')}T00:00:00`
     params.scanAtTo = `${dayjs(to).format('YYYY-MM-DD')}T23:59:59`
   }
+  params.page = page.value
+  params.pageSize = pageSize.value
   return params
+}
+
+function onPage(event: DataTablePageEvent) {
+  page.value = event.page + 1
+  pageSize.value = event.rows
+  void load()
+}
+
+function resetAndLoad() {
+  page.value = 1
+  void load()
 }
 
 function onScanAtRangeUpdate(value: Date | Date[] | (Date | null)[] | null | undefined) {
   const next = normalizeScanAtRange(value)
   filterScanAt.value = next
-  if (!next || isCompleteScanAtRange(next)) void load()
+  if (!next || isCompleteScanAtRange(next)) resetAndLoad()
 }
 
 async function load() {
@@ -155,12 +188,15 @@ async function load() {
     const res = await queryScanResult(buildQueryParams())
     if (!res.success) {
       rows.value = []
+      totalRecords.value = 0
       toast.add({ severity: 'error', summary: res.message || t('scan.loadError'), life: 3500 })
       return
     }
     rows.value = res.data?.items ?? []
+    totalRecords.value = res.data?.totalCount ?? 0
   } catch (err) {
     rows.value = []
+    totalRecords.value = 0
     toast.add({ severity: 'error', summary: readApiFailure(err) || t('scan.loadError'), life: 3500 })
   } finally {
     loading.value = false
@@ -170,7 +206,7 @@ async function load() {
 function clearFilters() {
   filterForm.value = emptyFilterForm()
   filterScanAt.value = null
-  void load()
+  resetAndLoad()
 }
 
 async function exportExcel() {
@@ -224,21 +260,34 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="table-wrap-fill w-full max-w-full overflow-x-auto">
-        <DataTable :value="rows" data-key="id" paginator :rows="50" :rows-per-page-options="[50, 100, 200]" scrollable
-          filter-display="row" scroll-height="flex" :paginator-template="paginatorTemplate"
-          :current-page-report-template="pageReport">
+        <DataTable :value="rows" data-key="id" lazy paginator :rows="pageSize" :first="first"
+          :total-records="totalRecords" :rows-per-page-options="[50, 100, 200]" scrollable filter-display="row"
+          scroll-height="flex" :loading="loading" :paginator-template="paginatorTemplate"
+          :current-page-report-template="pageReport" @page="onPage">
+          <Column header="#">
+            <template #body="{ index }">{{ (page - 1) * pageSize + index + 1 }}</template>
+          </Column>
+          <Column field="warehouse" :header="t('scan.warehouse')" :show-filter-menu="false">
+            <template #body="{ data }">{{ data.warehouse }}</template>
+            <template #filter>
+              <Select v-model="filterForm.warehouse" class="w-full" size="small" :options="warehouseOptions"
+                option-label="label" option-value="value" :loading="warehouseLoading"
+                :placeholder="t('scan.filterPlaceholderWarehouse')" show-clear @show="loadWarehouseOptions"
+                @update:model-value="resetAndLoad" />
+            </template>
+          </Column>
           <Column field="locationCode" :header="t('scan.location')" :show-filter-menu="false">
             <template #body="{ data }">{{ data.locationCode }}</template>
             <template #filter>
               <InputText v-model="filterForm.locationCode" class="w-full" size="small" type="text"
-                :placeholder="t('scan.filterPlaceholderLocationCode')" @keydown.enter="load" />
+                :placeholder="t('scan.filterPlaceholderLocationCode')" @keydown.enter="resetAndLoad" />
             </template>
           </Column>
           <Column field="boxCode" :header="t('scan.code')" :show-filter-menu="false">
             <template #body="{ data }">{{ data.boxCode }}</template>
             <template #filter>
               <InputText v-model="filterForm.boxCode" class="w-full" size="small" type="text"
-                :placeholder="t('scan.filterPlaceholderBoxCode')" @keydown.enter="load" />
+                :placeholder="t('scan.filterPlaceholderBoxCode')" @keydown.enter="resetAndLoad" />
             </template>
           </Column>
           <Column field="method" :header="t('scan.method')" :show-filter-menu="false">
@@ -246,7 +295,7 @@ onUnmounted(() => {
             <template #filter>
               <Select v-model="filterForm.method" class="w-full" size="small" :options="methodOptions"
                 option-label="label" option-value="value" :placeholder="t('scan.filterPlaceholderMethod')" show-clear
-                @update:model-value="load" />
+                @update:model-value="resetAndLoad" />
             </template>
           </Column>
           <Column field="scanType" :header="t('scan.scanType')" :show-filter-menu="false">
@@ -255,23 +304,14 @@ onUnmounted(() => {
               <Select v-model="filterForm.scanType" class="w-full" size="small" :options="scanTypeOptions"
                 option-label="label" option-value="value" :loading="scanTypeLoading"
                 :placeholder="t('scan.filterPlaceholderscanType')" show-clear @show="loadScanTypeOptions"
-                @update:model-value="load" />
-            </template>
-          </Column>
-          <Column field="warehouse" :header="t('scan.warehouse')" :show-filter-menu="false">
-            <template #body="{ data }">{{ data.warehouse }}</template>
-            <template #filter>
-              <Select v-model="filterForm.warehouse" class="w-full" size="small" :options="warehouseOptions"
-                option-label="label" option-value="value" :loading="warehouseLoading"
-                :placeholder="t('scan.filterPlaceholderWarehouse')" show-clear @show="loadWarehouseOptions"
-                @update:model-value="load" />
+                @update:model-value="resetAndLoad" />
             </template>
           </Column>
           <Column field="scanBy" :header="t('scan.user')" :show-filter-menu="false">
             <template #body="{ data }">{{ data.scanBy }}</template>
             <template #filter>
               <InputText v-model="filterForm.scanBy" class="w-full" size="small" type="text"
-                :placeholder="t('scan.filterPlaceholderScanBy')" @keydown.enter="load" />
+                :placeholder="t('scan.filterPlaceholderScanBy')" @keydown.enter="resetAndLoad" />
             </template>
           </Column>
           <Column field="scanAt" :header="t('scan.time')" :show-filter-menu="false">

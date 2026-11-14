@@ -1,6 +1,11 @@
 import { http } from '@/services/http'
 import { useAuthStore } from '@/stores/auth'
-import type { ApiResponse, ScanQueryResult, ScanQueryResultRequest } from '@/types/api'
+import type {
+  ApiResponse,
+  ScanQueryResult,
+  ScanQueryResultRequest,
+  ScanServiceQueryResult,
+} from '@/types/api'
 import type { ScanLog } from '@/types'
 import { toLocalIso } from '@/utils/format'
 
@@ -34,9 +39,19 @@ export async function queryScanResult(params: ScanQueryResultRequest = {}) {
   return data
 }
 
+export async function queryScanServiceResult(params: ScanQueryResultRequest = {}) {
+  const { data } = await http.post<ApiResponse<ScanServiceQueryResult>>(
+    '/scan/srvc/queryresult',
+    params,
+  )
+  return data
+}
+
+const COMMAND_TIMEOUT_MS = 10_000
+
 /** Online: single object via /scan/src/command. Sync batch: array via /sync/sc/syncsr. */
-export async function commandScan(body: ScanApiItem) {
-  const { data } = await http.post<ApiResponse<unknown>>('/scan/src/command', body)
+export async function commandScan(body: ScanApiItem, timeout = COMMAND_TIMEOUT_MS) {
+  const { data } = await http.post<ApiResponse<unknown>>('/scan/src/command', body, { timeout })
   return data
 }
 

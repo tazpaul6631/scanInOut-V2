@@ -332,16 +332,16 @@ function deleteAll() {
     </div>
 
     <div class="history-page-panel page-fill-panel rounded-2xl border border-line bg-white p-2 shadow-panel">
-      <div class="table-wrap-fill w-full max-w-full">
+      <div class="table-wrap-fill w-full max-w-full overflow-x-auto">
         <DataTable :value="pageRows" data-key="id" :lazy="true" paginator :rows="pageSize"
           :total-records="filteredTotal" :first="page * pageSize" :paginator-template="paginatorTemplate"
-          :current-page-report-template="pageReport" scrollable scroll-height="flex" striped-rows row-hover
-          @page="onPage">
+          :current-page-report-template="pageReport" scrollable scroll-height="flex"
+          :table-style="{ minWidth: '36rem' }" striped-rows row-hover @page="onPage">
           <Column header="#" header-class="scan-col-tight-start scan-col-tight-top" body-class="scan-col-tight-start">
             <template #body="{ index }">{{ rowIndex(index) }}</template>
           </Column>
           <Column :header="t('scan.location')" header-class="scan-col-tight scan-col-tight-top"
-            body-class="scan-col-tight">
+            body-class="scan-col-tight" :body-style="{ width: '5.5rem', minWidth: '5.5rem', maxWidth: '5.5rem' }">
             <template #body="{ data }">
               <span class="break-all font-medium text-ink">{{ data.location || '—' }}</span>
             </template>
@@ -351,8 +351,10 @@ function deleteAll() {
               <span class="break-all font-medium text-ink">{{ data.value }}</span>
             </template>
           </Column>
-          <Column :header="t('scan.dateNow')" header-class="scan-col-tight scan-col-tight-top"
-            body-class="scan-col-tight">
+          <Column :header="t('scan.dateNow')" header-class="scan-col-tight scan-col-tight-top scan-col-date"
+            body-class="scan-col-tight scan-col-date" :style="{ width: '7rem', minWidth: '7rem', maxWidth: '7rem' }"
+            :header-style="{ width: '7rem', minWidth: '7rem', maxWidth: '7rem' }"
+            :body-style="{ width: '7rem', minWidth: '7rem', maxWidth: '7rem' }">
             <template #body="{ data }">
               <div class="flex flex-col whitespace-nowrap leading-tight text-muted">
                 <span>{{ dayjs(data.createdAt).format('DD/MM/YYYY') }}</span>
@@ -361,7 +363,7 @@ function deleteAll() {
             </template>
           </Column>
           <Column :header="t('scan.user')" header-class="scan-col-tight-end scan-col-tight-top"
-            body-class="scan-col-tight-end">
+            body-class="scan-col-tight-end" :body-style="{ width: '7rem', minWidth: '7rem', maxWidth: '7rem' }">
             <template #body="{ data }">
               <span class="break-all text-muted">{{ userLabel(data) }}</span>
             </template>

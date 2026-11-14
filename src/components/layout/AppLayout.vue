@@ -131,6 +131,8 @@ const navGroups = computed(() => {
       items: [
         { to: '/', icon: 'pi pi-home', label: t('nav.dashboard') },
         // { to: '/users', icon: 'pi pi-users', label: t('nav.users') },
+        { to: '/warehouses', icon: 'pi pi-building', label: t('nav.warehouses') },
+        { to: '/storages', icon: 'pi pi-inbox', label: t('nav.storages') },
         { to: '/scan', icon: 'pi pi-qrcode', label: t('nav.scan') },
         // { to: '/scale', icon: 'pi pi-sliders-h', label: t('nav.scale') },
         // { to: '/hardware', icon: 'pi pi-wifi', label: t('nav.hardware') },
@@ -139,6 +141,14 @@ const navGroups = computed(() => {
         // { to: '/settings', icon: 'pi pi-cog', label: t('nav.settings') },
       ],
     },
+    // {
+    //   key: 'reports',
+    //   label: t('nav.reports'),
+    //   items: [
+    //     { to: '/scan-results', icon: 'pi pi-table', label: t('nav.scanResult') },
+    //     { to: '/storages-2', icon: 'pi pi-inbox', label: t('nav.storagesReport2') },
+    //   ],
+    // },
     // {
     //   key: 'app',
     //   label: t('nav.app'),
@@ -165,11 +175,11 @@ const title = computed(() =>
         <div v-if="webIconRail" class="sidebar-rail-spacer" aria-hidden="true" />
         <aside class="sidebar" :class="{ open, hover: webIconRail && hoverOpen }" @mouseenter="onSidebarEnter"
           @mouseleave="onSidebarLeave" @click.stop>
-          <RouterLink :to="homeTo" class="brand brand-btn" :title="hoverOpen ? undefined : t('app.name')"
+          <RouterLink :to="homeTo" class="brand brand-btn" :title="hoverOpen ? undefined : t('app.webtitle')"
             @click="closeSidebar">
-            <img class="brand-mark" src="/logo-icon.jpg" :alt="t('app.name')" />
+            <img class="brand-mark" src="/logo-icon.jpg" :alt="t('app.webtitle')" />
             <div>
-              <h1>{{ !webIconRail ? t('app.webtitle') : t('app.name') }}</h1>
+              <h1>{{ t('app.webtitle') }}</h1>
               <!-- <p>{{ settings.current.companyName }}</p> -->
             </div>
           </RouterLink>

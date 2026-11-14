@@ -146,14 +146,29 @@ async function saveBox(value: string, kind: ScanKind, format: string): Promise<S
   if (!code) return null
 
   const existing = await findScanByValue(code)
+  let movedFrom: string | null = null
   if (existing) {
-    showNotice(
-      existing.location
-        ? t('scan.duplicateOnShelf', { location: existing.location })
-        : t('scan.duplicate'),
-    )
-    boxDraft.value = ''
-    return null
+    const oldLocation = existing.location?.trim() || ''
+    if (oldLocation === location) {
+      showNotice(
+        oldLocation
+          ? t('scan.duplicateOnShelf', { location: oldLocation })
+          : t('scan.duplicate'),
+      )
+      boxDraft.value = ''
+      return null
+    }
+
+    try {
+      await deleteScanLog(existing.id)
+    } catch (err) {
+      showNotice(err instanceof Error ? err.message : t('scan.deleteError'))
+      boxDraft.value = ''
+      return null
+    }
+
+    sessionItems.value = sessionItems.value.filter((x) => x.id !== existing.id)
+    movedFrom = oldLocation || null
   }
 
   const session = auth.session
@@ -171,19 +186,29 @@ async function saveBox(value: string, kind: ScanKind, format: string): Promise<S
   boxDraft.value = ''
   clearSwipeState()
   await refreshCounts()
-  if (network.online) {
+  pushCommandInBackground(item, 0)
+  if (movedFrom) {
+    showNotice(t('scan.duplicateMoved', { location: movedFrom, newLocation: location }))
+  }
+  await tryAutoArchive()
+  return item
+}
+
+function pushCommandInBackground(row: ScanLog, status: number) {
+  if (!network.online) return
+  void (async () => {
     try {
-      await commandScan(toScanApiItem(item, 0))
-      await finalizeSyncedScans([item])
-      const row = sessionItems.value.find((x) => x.id === item.id)
-      if (row) row.synced = true
+      await commandScan(toScanApiItem(row, status))
+      await finalizeSyncedScans([{ ...row, status }])
+      if (status !== -1) {
+        const sessionRow = sessionItems.value.find((x) => x.id === row.id)
+        if (sessionRow) sessionRow.synced = true
+      }
       await refreshCounts()
     } catch {
       // keep pending for batch sync
     }
-  }
-  await tryAutoArchive()
-  return item
+  })()
 }
 
 async function saveLocationManual() {
@@ -336,11 +361,11 @@ function askDelete(row: ScanLog) {
     },
     accept: async () => {
       try {
-        if (network.online) {
-          await commandScan(toScanApiItem(row, -1))
+        if (!row.synced) {
           await deleteScanLog(row.id)
         } else {
           await markScanDeleted(row.id)
+          pushCommandInBackground(row, -1)
         }
         sessionItems.value = sessionItems.value.filter((x) => x.id !== row.id)
         await refreshCounts()
@@ -394,7 +419,8 @@ useBarcodeWedge(async (value) => {
               :disabled="!locationLocked" @keydown.enter.prevent="saveBoxManual" />
             <label for="manual-input">{{ t('scan.boxPlaceholder') }}</label>
           </FloatLabel>
-          <Button class="shrink-0" :label="t('common.save')" :disabled="!locationLocked" @click="saveBoxManual" />
+          <Button class="shrink-0" :label="t('common.save')" :disabled="!locationLocked || !boxDraft.trim()"
+            @click="saveBoxManual" />
         </div>
         <OverlayBadge v-if="unsyncedCount" :value="formatBadgeCount(unsyncedCount)" severity="warn"
           class="shrink-0 mr-3">

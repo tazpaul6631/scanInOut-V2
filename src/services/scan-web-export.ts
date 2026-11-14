@@ -6,7 +6,11 @@ import {
   WEB_SCAN_EXPORT_COLUMNS,
   mapWebScanExportRow,
 } from '@/services/scan-export-format-web'
-import type { ViewScanResult } from '@/types/api'
+import {
+  WEB_SCAN_SERVICE_EXPORT_COLUMNS,
+  mapWebScanServiceExportRow,
+} from '@/services/scan-export-format-service'
+import type { ViewScanResult, ViewScanServiceResult } from '@/types/api'
 
 function countBy(values: string[]): Array<{ key: string; count: number }> {
   const map = new Map<string, number>()
@@ -44,6 +48,33 @@ export async function exportWebScanWorkbook(
   return exportScanWorkbookPaged(
     filename,
     WEB_SCAN_EXPORT_COLUMNS,
+    summary,
+    async (offset, limit) => mapped.slice(offset, offset + limit),
+    pageSize,
+  )
+}
+
+export function summarizeWebScanService(rows: ViewScanServiceResult[]) {
+  return summarizeWebScans(
+    rows.map((row) => ({
+      id: row.id,
+      locationCode: row.locationCode,
+      scanBy: row.scanBy,
+    })),
+  )
+}
+
+/** Excel for /scan/srvc/queryresult rows. */
+export async function exportWebScanServiceWorkbook(
+  filename: string,
+  rows: ViewScanServiceResult[],
+  pageSize = 1000,
+): Promise<number> {
+  const mapped = rows.map((row, index) => mapWebScanServiceExportRow(row, index + 1))
+  const summary = summarizeWebScanService(rows)
+  return exportScanWorkbookPaged(
+    filename,
+    WEB_SCAN_SERVICE_EXPORT_COLUMNS,
     summary,
     async (offset, limit) => mapped.slice(offset, offset + limit),
     pageSize,

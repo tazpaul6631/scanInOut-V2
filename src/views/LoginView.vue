@@ -19,7 +19,7 @@ import { useBarcodeWedge } from '@/composables/useBarcodeWedge'
 import { useAuthStore } from '@/stores/auth'
 import { queryScanTypeBaseList, queryWarehouseBaseList } from '@/services/api/category'
 import { readApiFailure } from '@/services/api/error'
-import type { ViewCategoryBase } from '@/types/api'
+import type { ViewCategoryBase, ViewWarehouseBase } from '@/types/api'
 
 const NFC_SUPPRESS_MS = 1500
 /** Colon-separated NFC UID, e.g. aa:bb:cc:dd */
@@ -67,12 +67,22 @@ function toSelectOptions(rows: ViewCategoryBase[] | null | undefined) {
     .filter((row): row is { label: string; value: string } => Boolean(row))
 }
 
+function toWarehouseSelectOptions(rows: ViewWarehouseBase[] | null | undefined) {
+  return (rows ?? [])
+    .map((row) => {
+      const name = row.warehouseName?.trim() || row.warehouseCode?.trim()
+      if (!name) return null
+      return { label: name, value: name }
+    })
+    .filter((row): row is { label: string; value: string } => Boolean(row))
+}
+
 async function loadWarehouseOptions() {
   if (warehouseLoading.value) return
   warehouseLoading.value = true
   try {
     const res = await queryWarehouseBaseList()
-    warehouseOptions.value = toSelectOptions(res.data)
+    warehouseOptions.value = toWarehouseSelectOptions(res.data)
   } catch {
     warehouseOptions.value = []
   } finally {

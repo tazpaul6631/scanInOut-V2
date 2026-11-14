@@ -946,3 +946,10 @@ body {
 .history-page-panel td.scan-col-tight-end {
   padding-right: 5px;
 }
+
+.history-page-panel th.scan-col-date,
+.history-page-panel td.scan-col-date {
+  padding-left: 4px;
+  padding-right: 4px;
+  white-space: nowrap;
+}

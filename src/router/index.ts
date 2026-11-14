@@ -1,10 +1,10 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { homePathForShell } from '@/adapters/platform'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes: [
     {
       path: '/login',
@@ -18,13 +18,29 @@ const router = createRouter({
       children: [
         { path: '', name: 'dashboard', component: () => import('@/views/web/dashboard/DashboardView.vue') },
         { path: 'users', name: 'users', component: () => import('@/views/web/user/UsersView.vue') },
-        { path: 'scan', name: 'scan', component: () => import('@/views/web/ScanView.vue') },
-        { path: 'scale', name: 'scale', component: () => import('@/views/web/ScaleView.vue') },
-        { path: 'hardware', name: 'hardware', component: () => import('@/views/web/HardwareView.vue') },
-        { path: 'media', name: 'media', component: () => import('@/views/web/MediaView.vue') },
-        { path: 'sync', name: 'sync', component: () => import('@/views/web/SyncView.vue') },
-        { path: 'settings', name: 'settings', component: () => import('@/views/web/SettingsView.vue') },
-        { path: 'app/tablet', name: 'app-tablet', component: () => import('@/views/app/tablet/Index.vue') },
+        {
+          path: 'warehouses',
+          name: 'warehouses',
+          component: () => import('@/views/web/warehouse/WarehousesView.vue'),
+        },
+        {
+          path: 'storages',
+          name: 'storages',
+          component: () => import('@/views/web/storage/StoragesView.vue'),
+        },
+        { path: 'scan', name: 'scan', component: () => import('@/views/web/scan/ScanView.vue') },
+        {
+          path: 'scan-results',
+          name: 'scan-results',
+          component: () => import('@/views/web/scan/ScanResultView.vue'),
+        },
+        { path: 'storages-2', name: 'storages-report-2', component: () => import('@/views/web/scan/ScanView.vue') },
+        // { path: 'scale', name: 'scale', component: () => import('@/views/web/ScaleView.vue') },
+        // { path: 'hardware', name: 'hardware', component: () => import('@/views/web/HardwareView.vue') },
+        // { path: 'media', name: 'media', component: () => import('@/views/web/MediaView.vue') },
+        // { path: 'sync', name: 'sync', component: () => import('@/views/web/SyncView.vue') },
+        // { path: 'settings', name: 'settings', component: () => import('@/views/web/SettingsView.vue') },
+        // { path: 'app/tablet', name: 'app-tablet', component: () => import('@/views/app/tablet/Index.vue') },
         {
           path: 'app/mobile',
           component: () => import('@/views/app/mobile/MobileShell.vue'),
