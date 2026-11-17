@@ -141,14 +141,14 @@ const navGroups = computed(() => {
         // { to: '/settings', icon: 'pi pi-cog', label: t('nav.settings') },
       ],
     },
-    // {
-    //   key: 'reports',
-    //   label: t('nav.reports'),
-    //   items: [
-    //     { to: '/scan-results', icon: 'pi pi-table', label: t('nav.scanResult') },
-    //     { to: '/storages-2', icon: 'pi pi-inbox', label: t('nav.storagesReport2') },
-    //   ],
-    // },
+    {
+      key: 'reports',
+      label: t('nav.reports'),
+      items: [
+        { to: '/scan-results', icon: 'pi pi-table', label: t('nav.scanResult') },
+        // { to: '/storages-2', icon: 'pi pi-inbox', label: t('nav.storagesReport2') },
+      ],
+    },
     // {
     //   key: 'app',
     //   label: t('nav.app'),

@@ -20,6 +20,18 @@ export interface ScanQueryResultRequest {
   scanAtFrom?: string | null
   /** Local wall-clock `YYYY-MM-DD 23:59:59` */
   scanAtTo?: string | null
+  outBoxBarCode?: string | null
+  warehouseName?: string | null
+  storageName?: string | null
+  cutNo?: string | null
+  smStyleCode?: string | null
+  styleName?: string | null
+  sizeName?: string | null
+  boxNo?: string | null
+  perCount?: string | null
+  lastLeaveDateFrom?: string | null
+  lastLeaveDateTo?: string | null
+  isWarning?: boolean | null
   page?: number
   pageSize?: number
 }
@@ -45,7 +57,7 @@ export interface ViewScanServiceResult {
   scanBy?: string | null
   buName?: string | null
   outBoxBarCode?: string | null
-  wareHouseName?: string | null
+  warehouseName?: string | null
   storageName?: string | null
   cutNo?: string | null
   smStyleCode?: string | null
@@ -54,6 +66,7 @@ export interface ViewScanServiceResult {
   boxNo?: number | null
   perCount?: number | null
   lastLeaveDate?: string | null
+  isWarning?: boolean | null
 }
 
 export interface ScanServiceQueryResult {

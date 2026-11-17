@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
 import type { DataTablePageEvent } from 'primevue/datatable'
+import Skeleton from 'primevue/skeleton'
 import Button from '@/components/ui/AppButton.vue'
 import Dialog from '@/components/ui/AppDialog.vue'
 import InputText from '@/components/ui/AppInputText.vue'
@@ -23,8 +24,8 @@ type PrintLabel = {
 
 const LABEL_W_MM = 85
 const LABEL_H_MM = 102
-const MARGIN_X_MM = 3
-const MARGIN_Y_MM = 1.5
+const MARGIN_X_MM = 1
+const MARGIN_Y_MM = 1
 const QR_MM = 77
 /** 203 dpi → 8 dots/mm; 300 dpi → 12 */
 const DPMM = 12
@@ -54,6 +55,10 @@ const pageReport = computed(() =>
     ? '{first}-{last} / {totalRecords}'
     : 'Showing {first} to {last} of {totalRecords} entries',
 )
+const skeletonRows = Array.from({ length: 8 }, (_, index) => ({ id: `sk-${index}` }))
+const tableRows = computed(() => (loading.value ? skeletonRows : rows.value))
+
+let filterInputTimer: ReturnType<typeof setTimeout> | null = null
 
 function emptyFilterForm(): StorageQueryResultRequest {
   return {
@@ -98,13 +103,24 @@ function resetAndLoad() {
   void load()
 }
 
+function onFilterTextInput() {
+  if (filterInputTimer) clearTimeout(filterInputTimer)
+  filterInputTimer = setTimeout(() => resetAndLoad(), 300)
+}
+
+function clearFilterInputTimer() {
+  if (!filterInputTimer) return
+  clearTimeout(filterInputTimer)
+  filterInputTimer = null
+}
+
 async function load() {
   loading.value = true
+  selected.value = []
   try {
     const res = await queryStorageResult(buildQueryParams())
     if (!res.success) {
       rows.value = []
-      selected.value = []
       totalRecords.value = 0
       toast.add({
         severity: 'error',
@@ -114,11 +130,9 @@ async function load() {
       return
     }
     rows.value = res.data?.items ?? []
-    selected.value = []
     totalRecords.value = res.data?.totalCount ?? 0
   } catch (err) {
     rows.value = []
-    selected.value = []
     totalRecords.value = 0
     toast.add({
       severity: 'error',
@@ -131,6 +145,7 @@ async function load() {
 }
 
 function clearFilters() {
+  clearFilterInputTimer()
   filterForm.value = emptyFilterForm()
   resetAndLoad()
 }
@@ -238,11 +253,11 @@ function buildPrintDocumentHtml(labels: PrintLabel[]) {
       margin: 0;
       padding: 0;
       text-align: center;
-      font-size: 24pt;
-      font-weight: 700;
-      line-height: 1;
+      font-weight: 900;
       word-break: break-word;
     }
+    .wh { font-size: 2rem; line-height: 0.8; }
+    .name { font-size: 4rem; line-height: 0.7; }
     .qr {
       width: ${QR_MM}mm;
       height: ${QR_MM}mm;
@@ -323,6 +338,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  clearFilterInputTimer()
   window.removeEventListener('resize', refreshShell)
 })
 </script>
@@ -331,7 +347,7 @@ onUnmounted(() => {
   <div class="page-fill">
     <div class="page-fill-panel col-span-full rounded-2xl border border-line bg-white p-2.5 shadow-panel">
       <div class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
-        <h3 class="m-0">{{ t('storages.title') }}</h3>
+        <h3 class="m-0 ml-3">{{ t('storages.title') }}</h3>
         <div class="flex flex-wrap items-center gap-2">
           <Button :label="compact ? undefined : t('storages.print')" icon="pi pi-qrcode" :ripple="false"
             :disabled="!selected.length" :aria-label="t('storages.print')" @click="openPrintDialog" />
@@ -340,33 +356,45 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="table-wrap-fill w-full max-w-full overflow-x-auto">
-        <DataTable v-model:selection="selected" :value="rows" data-key="id" selection-mode="multiple" lazy paginator
-          :rows="pageSize" :first="first" :total-records="totalRecords" :rows-per-page-options="[50, 100, 200]"
-          scrollable filter-display="row" scroll-height="flex" :loading="loading"
+        <DataTable v-model:selection="selected" :value="tableRows" data-key="id" selection-mode="multiple" lazy
+          paginator :rows="pageSize" :first="first" :total-records="totalRecords"
+          :rows-per-page-options="[50, 100, 200]" scrollable filter-display="row" scroll-height="flex"
           :paginator-template="paginatorTemplate" :current-page-report-template="pageReport" @page="onPage">
           <Column selection-mode="multiple" header-style="width: 3rem" />
           <Column header="#">
-            <template #body="{ index }">{{ (page - 1) * pageSize + index + 1 }}</template>
+            <template #body="{ index }">
+              <Skeleton v-if="loading" width="1.25rem" height="1rem" />
+              <template v-else>{{ (page - 1) * pageSize + index + 1 }}</template>
+            </template>
           </Column>
           <Column field="warehouseCode" :header="t('storages.warehouseCode')" :show-filter-menu="false">
-            <template #body="{ data }">{{ data.warehouseCode }}</template>
+            <template #body="{ data }">
+              <Skeleton v-if="loading" width="55%" height="1rem" />
+              <template v-else>{{ data.warehouseCode }}</template>
+            </template>
             <template #filter>
               <InputText v-model="filterForm.warehouseCode" class="w-full" size="small" type="text"
-                :placeholder="t('storages.filterPlaceholderWarehouseCode')" @keydown.enter="resetAndLoad" />
+                :placeholder="t('storages.filterPlaceholderWarehouseCode')" @update:model-value="onFilterTextInput" />
             </template>
           </Column>
           <Column field="warehouseName" :header="t('storages.warehouseName')" :show-filter-menu="false">
-            <template #body="{ data }">{{ data.warehouseName }}</template>
+            <template #body="{ data }">
+              <Skeleton v-if="loading" width="70%" height="1rem" />
+              <template v-else>{{ data.warehouseName }}</template>
+            </template>
             <template #filter>
               <InputText v-model="filterForm.warehouseName" class="w-full" size="small" type="text"
-                :placeholder="t('storages.filterPlaceholderWarehouseName')" @keydown.enter="resetAndLoad" />
+                :placeholder="t('storages.filterPlaceholderWarehouseName')" @update:model-value="onFilterTextInput" />
             </template>
           </Column>
           <Column field="storageName" :header="t('storages.storageName')" :show-filter-menu="false">
-            <template #body="{ data }">{{ data.storageName }}</template>
+            <template #body="{ data }">
+              <Skeleton v-if="loading" width="60%" height="1rem" />
+              <template v-else>{{ data.storageName }}</template>
+            </template>
             <template #filter>
               <InputText v-model="filterForm.storageName" class="w-full" size="small" type="text"
-                :placeholder="t('storages.filterPlaceholderStorageName')" @keydown.enter="resetAndLoad" />
+                :placeholder="t('storages.filterPlaceholderStorageName')" @update:model-value="onFilterTextInput" />
             </template>
           </Column>
         </DataTable>
@@ -374,23 +402,24 @@ onUnmounted(() => {
     </div>
 
     <Dialog v-model:visible="printOpen" modal dismissable-mask class="storage-print-dialog"
-      :header="t('storages.printTitle')" :style="{ width: 'min(420px, 94vw)' }">
+      :header="t('storages.printTitle')" :closable="false"
+      :style="{ width: printLabels.length >= 3 ? 'min(800px, 96vw)' : 'min(400px, 94vw)' }">
       <div v-if="printBusy" class="flex items-center justify-center py-10 text-sm text-muted">
         <i class="pi pi-spin pi-spinner mr-2" aria-hidden="true" />
         …
       </div>
 
       <div v-else id="storage-label-print"
-        class="storage-print-root flex max-h-[60vh] flex-col items-center gap-3 overflow-y-auto py-1">
+        class="storage-print-root max-h-[60vh] justify-items-center gap-5 overflow-y-auto p-4"
+        :class="printLabels.length >= 3 ? 'grid grid-cols-3' : 'flex flex-col items-center'">
         <article v-for="label in printLabels" :key="label.id"
           class="storage-label-card flex h-[254px] w-[212px] flex-col items-center justify-center gap-0 rounded border border-line bg-white px-[8px] py-[4px]">
-          <div v-if="label.warehouseName"
-            class="storage-label-wh text-center text-lg font-semibold leading-none text-ink">
+          <div v-if="label.warehouseName" class="storage-label-wh text-center text-xl font-bold leading-none text-ink">
             {{ label.warehouseName }}
           </div>
           <img v-if="label.qrUrl" :src="label.qrUrl" :alt="label.storageName"
             class="storage-label-qr h-[185px] w-[185px]" />
-          <div class="storage-label-name text-center text-lg font-semibold leading-none text-ink">
+          <div class="storage-label-name text-center text-4xl font-bold leading-none text-ink">
             {{ label.storageName }}
           </div>
         </article>

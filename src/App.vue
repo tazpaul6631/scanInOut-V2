@@ -65,15 +65,17 @@ onMounted(async () => {
     applyLocale(normalizeLocale(settings.current.locale))
     await useSyncStore().refresh()
     await auth.load()
-    if (!auth.isLoggedIn && !route.meta.public) {
-      // await router.replace({ name: 'login', query: { redirect: route.fullPath } })
-    }
     const home = homePathForShell()
-    if (isNative() || detectDeviceShell() === 'mobile') {
-      if (!route.path.startsWith('/app/mobile')) {
-        await router.replace(home)
+    if (!auth.isLoggedIn) {
+      if (route.name !== 'login') {
+        await router.replace({
+          name: 'login',
+          query: { redirect: route.fullPath },
+        })
       }
     } else if (route.path === '/login') {
+      await router.replace(home)
+    } else if ((isNative() || detectDeviceShell() === 'mobile') && !route.path.startsWith('/app/mobile')) {
       await router.replace(home)
     }
     if (isNative()) {

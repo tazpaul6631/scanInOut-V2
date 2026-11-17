@@ -7,6 +7,13 @@ export function formatDateTime(value: number | string | null | undefined): strin
   return dayjs(parsed).format('DD/MM/YYYY HH:mm:ss')
 }
 
+export function formatDate(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—'
+  const parsed = typeof value === 'number' ? value : Date.parse(value)
+  if (!parsed) return '—'
+  return dayjs(parsed).format('DD/MM/YYYY')
+}
+
 /** Device-local ISO with offset, e.g. 2026-11-12T10:51:43+07:00 */
 export function toLocalIso(value: number | string | Date): string {
   return dayjs(value).format('YYYY-MM-DDTHH:mm:ssZ')

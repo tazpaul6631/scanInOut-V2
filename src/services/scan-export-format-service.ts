@@ -3,26 +3,31 @@ import type { ExportColumn } from '@/services/export'
 import type { ViewScanServiceResult } from '@/types/api'
 
 export const WEB_SCAN_SERVICE_EXPORT_COLUMNS: ExportColumn[] = [
-  { key: 'index', header: '#', width: 7 },
-  { key: 'warehouse', header: 'Warehouse', width: 18 },
-  { key: 'wareHouseName', header: 'Warehouse name', width: 22 },
-  { key: 'locationCode', header: 'Location', width: 18 },
-  { key: 'storageName', header: 'Storage', width: 18 },
-  { key: 'boxCode', header: 'Box code', width: 22 },
-  { key: 'outBoxBarCode', header: 'Out box barcode', width: 24 },
-  { key: 'method', header: 'Method', width: 12 },
-  { key: 'scanType', header: 'Scan type', width: 16 },
-  { key: 'scanBy', header: 'Scan by', width: 16 },
-  { key: 'scanAt', header: 'Scan at', width: 20 },
-  { key: 'buName', header: 'BU', width: 14 },
-  { key: 'cutNo', header: 'Cut no', width: 14 },
-  { key: 'smStyleCode', header: 'Style code', width: 16 },
-  { key: 'styleName', header: 'Style name', width: 20 },
-  { key: 'sizeName', header: 'Size', width: 10 },
-  { key: 'boxNo', header: 'Box no', width: 10 },
-  { key: 'perCount', header: 'Per count', width: 10 },
-  { key: 'lastLeaveDate', header: 'Last leave', width: 20 },
+  { key: 'index', header: '#', width: 10 },
+  { key: 'scanAt', header: '實盤日期\nActual Inventory Date\nNgày kiểm kê thực tế', width: 13 },
+  { key: 'scanBy', header: '實盤人員ID\nInventory User ID\nMã ID nhân viên kiểm kê', width: 13 },
+  { key: 'scanType', header: '實盤型態\nInventory Type\nLoại hình kiểm kê', width: 13 },
+  { key: 'method', header: '實盤方式\nInventory Method\nPhương thức kiểm kê', width: 13 },
+  { key: 'warehouse', header: '實盤位置(倉)\nActual Inventory Location (Warehouse)\nVị trí kiểm kê thực tế (Kho)', width: 15 },
+  { key: 'locationCode', header: '實盤儲位\nActual Inventory Storage Location\nVị trí lưu trữ thực tế', width: 15 },
+  { key: 'outBoxBarCode', header: '實盤外箱條碼標\nActual Carton Barcode Label\nNhãn mã vạch thùng carton thực tế', width: 18 },
+  { key: 'warehouseName', header: 'ERP現在位置(倉)\nCurrent ERP Location (Warehouse)\nVị trí hiện tại trên ERP (Kho)', width: 20 },
+  { key: 'storageName', header: 'ERP現在儲位\nCurrent ERP Storage Location\nVị trí lưu trữ hiện tại trên ERP', width: 15 },
+  { key: 'cutNo', header: 'JHV number', width: 25 },
+  { key: 'smStyleCode', header: '型體\nModel\nKiểu dáng', width: 25 },
+  { key: 'styleName', header: 'JHV Art', width: 15 },
+  { key: 'sizeName', header: '尺碼\nSize\nCỡ giày', width: 17, wrap: true },
+  { key: 'boxNo', header: '箱號\nCarton Number\nSố thùng', width: 10 },
+  { key: 'perCount', header: '雙數\nPairs\nSố đôi', width: 10 },
+  { key: 'lastLeaveDate', header: 'Current CRD/CSD\nCRD/CSD hiện tại', width: 20 },
 ]
+
+function formatExportDate(value: string | null | undefined): string {
+  if (!value) return ''
+  const parsed = Date.parse(value)
+  if (!parsed) return ''
+  return dayjs(parsed).format('DD/MM/YYYY')
+}
 
 export function mapWebScanServiceExportRow(
   row: ViewScanServiceResult,
@@ -30,25 +35,24 @@ export function mapWebScanServiceExportRow(
 ): Record<string, unknown> {
   return {
     index,
-    warehouse: row.warehouse?.trim() || '',
-    wareHouseName: row.wareHouseName?.trim() || '',
-    locationCode: row.locationCode?.trim() || '',
-    storageName: row.storageName?.trim() || '',
-    boxCode: row.boxCode?.trim() || '',
-    outBoxBarCode: row.outBoxBarCode?.trim() || '',
-    method: row.method?.trim() || '',
-    scanType: row.scanType?.trim() || '',
+    scanAt: formatExportDate(row.scanAt),
     scanBy: row.scanBy?.trim() || '',
-    scanAt: row.scanAt ? dayjs(row.scanAt).format('DD/MM/YYYY HH:mm:ss') : '',
-    buName: row.buName?.trim() || '',
+    scanType: row.scanType?.trim() || '',
+    method:
+      row.method === 'Input' ? 'KeyInput'
+        : row.method === 'Laser' ? 'Scan'
+          : row.method?.trim() || '',
+    warehouse: row.warehouse?.trim() || '',
+    locationCode: row.locationCode?.trim() || '',
+    outBoxBarCode: row.outBoxBarCode?.trim() || '',
+    warehouseName: row.warehouseName?.trim() || '',
+    storageName: row.storageName?.trim() || '',
     cutNo: row.cutNo?.trim() || '',
     smStyleCode: row.smStyleCode?.trim() || '',
     styleName: row.styleName?.trim() || '',
     sizeName: row.sizeName?.trim() || '',
     boxNo: row.boxNo ?? '',
     perCount: row.perCount ?? '',
-    lastLeaveDate: row.lastLeaveDate
-      ? dayjs(row.lastLeaveDate).format('DD/MM/YYYY HH:mm:ss')
-      : '',
+    lastLeaveDate: formatExportDate(row.lastLeaveDate),
   }
 }

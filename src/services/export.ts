@@ -14,6 +14,8 @@ export interface ExportColumn {
   width?: number
   /** Excel number format, e.g. `dd/mm/yyyy hh:mm:ss`. */
   numFmt?: string
+  /** Wrap long cell text in Detail sheet. */
+  wrap?: boolean
 }
 
 async function saveNative(filename: string, data: string, encoding: Encoding = Encoding.UTF8) {
@@ -194,20 +196,14 @@ export interface ScanWorkbookSummary {
   byUser: Array<{ key: string; count: number }>
 }
 
-/**
- * Excel with TongKet + ChiTiet. Detail rows are added page-by-page (no second full JS array).
- * Returns number of detail rows written.
- */
-export async function exportScanWorkbookPaged(
-  filename: string,
-  detailColumns: ExportColumn[],
-  summary: ScanWorkbookSummary,
-  fetchPage: (offset: number, limit: number) => Promise<Record<string, unknown>[]>,
-  pageSize = 1000,
-): Promise<number> {
-  const wb = new ExcelJS.Workbook()
+const THIN_BORDER: Partial<ExcelJS.Borders> = {
+  top: { style: 'thin', color: { argb: 'FF000000' } },
+  left: { style: 'thin', color: { argb: 'FF000000' } },
+  bottom: { style: 'thin', color: { argb: 'FF000000' } },
+  right: { style: 'thin', color: { argb: 'FF000000' } },
+}
 
-  const tongKet = wb.addWorksheet('Total Summary')
+function writeScanWorkbookSummary(tongKet: ExcelJS.Worksheet, summary: ScanWorkbookSummary) {
   tongKet.getColumn(1).width = 12
   tongKet.getColumn(2).width = 10
   tongKet.addRow(['Metric', 'Value'])
@@ -229,7 +225,25 @@ export async function exportScanWorkbookPaged(
   for (const row of summary.byLocation) {
     tongKet.addRow([row.key, row.count])
   }
+}
 
+/**
+ * Excel with TongKet + ChiTiet. Detail rows are added page-by-page (no second full JS array).
+ * Total Summary is written after Detail so `summary` may be mutated during `fetchPage`.
+ * Returns number of detail rows written.
+ */
+export async function exportScanWorkbookPaged(
+  filename: string,
+  detailColumns: ExportColumn[],
+  summary: ScanWorkbookSummary,
+  fetchPage: (offset: number, limit: number) => Promise<Record<string, unknown>[]>,
+  pageSize = 1000,
+  styleDetailRow?: (excelRow: ExcelJS.Row, sourceRow: Record<string, unknown>) => void,
+  onProgress?: (done: number) => void,
+): Promise<number> {
+  const wb = new ExcelJS.Workbook()
+
+  const tongKet = wb.addWorksheet('Total Summary')
   const chiTiet = wb.addWorksheet('Detail')
   chiTiet.columns = detailColumns.map((c) => ({
     header: c.header,
@@ -239,7 +253,10 @@ export async function exportScanWorkbookPaged(
   const headerRow = chiTiet.getRow(1)
   headerRow.font = { bold: true, color: { argb: 'FFC00000' } }
   headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
-  headerRow.height = 50
+  headerRow.height = 120
+  for (let col = 1; col <= detailColumns.length; col++) {
+    headerRow.getCell(col).border = THIN_BORDER
+  }
 
   let offset = 0
   let total = 0
@@ -249,9 +266,17 @@ export async function exportScanWorkbookPaged(
     for (const row of rows) {
       const excelRow = chiTiet.addRow(detailColumns.map((c) => row[c.key] ?? ''))
       excelRow.alignment = { horizontal: 'center', vertical: 'middle' }
+      detailColumns.forEach((col, colIndex) => {
+        const cell = excelRow.getCell(colIndex + 1)
+        cell.border = THIN_BORDER
+        if (!col.wrap) return
+        cell.alignment = { ...(cell.alignment ?? {}), horizontal: 'center', vertical: 'middle', wrapText: true }
+      })
+      styleDetailRow?.(excelRow, row)
     }
     total += rows.length
     offset += rows.length
+    onProgress?.(total)
     if (rows.length < pageSize) break
   }
 
@@ -261,6 +286,8 @@ export async function exportScanWorkbookPaged(
     from: { row: 1, column: 1 },
     to: { row: lastRow, column: lastCol },
   }
+
+  writeScanWorkbookSummary(tongKet, summary)
 
   await writeXlsxFile(filename, wb)
   return total

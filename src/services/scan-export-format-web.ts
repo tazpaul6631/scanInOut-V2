@@ -51,7 +51,10 @@ export function mapWebScanExportRow(
     scanDate: row.scanAt ? dayjs(row.scanAt).format('DD/MM/YYYY') : '',
     userId: row.scanBy?.trim() || '',
     scanType: row.scanType?.trim() || '',
-    method: row.method?.trim() || '',
+    method:
+      row.method === 'Input' ? 'KeyInput'
+      : row.method === 'Laser' ? 'Scan'
+        : row.method?.trim() || '',
     warehouse: row.warehouse?.trim() || '',
     location: row.locationCode?.trim() || '',
     barcode: row.boxCode?.trim() || '',

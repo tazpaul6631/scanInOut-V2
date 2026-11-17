@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from 'primevue/usetoast'
 import type { DataTablePageEvent } from 'primevue/datatable'
+import Skeleton from 'primevue/skeleton'
 import Button from '@/components/ui/AppButton.vue'
 import InputText from '@/components/ui/AppInputText.vue'
 import DataTable from '@/components/ui/AppDataTable.vue'
@@ -33,6 +34,10 @@ const pageReport = computed(() =>
     ? '{first}-{last} / {totalRecords}'
     : 'Showing {first} to {last} of {totalRecords} entries',
 )
+const skeletonRows = Array.from({ length: 8 }, (_, index) => ({ id: `sk-${index}` }))
+const tableRows = computed(() => (loading.value ? skeletonRows : rows.value))
+
+let filterInputTimer: ReturnType<typeof setTimeout> | null = null
 
 function emptyFilterForm(): WarehouseQueryResultRequest {
   return {
@@ -80,6 +85,17 @@ function resetAndLoad() {
   void load()
 }
 
+function onFilterTextInput() {
+  if (filterInputTimer) clearTimeout(filterInputTimer)
+  filterInputTimer = setTimeout(() => resetAndLoad(), 300)
+}
+
+function clearFilterInputTimer() {
+  if (!filterInputTimer) return
+  clearTimeout(filterInputTimer)
+  filterInputTimer = null
+}
+
 async function load() {
   loading.value = true
   try {
@@ -110,6 +126,7 @@ async function load() {
 }
 
 function clearFilters() {
+  clearFilterInputTimer()
   filterForm.value = emptyFilterForm()
   resetAndLoad()
 }
@@ -121,6 +138,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  clearFilterInputTimer()
   window.removeEventListener('resize', refreshShell)
 })
 </script>
@@ -129,46 +147,65 @@ onUnmounted(() => {
   <div class="page-fill">
     <div class="page-fill-panel col-span-full rounded-2xl border border-line bg-white p-2.5 shadow-panel">
       <div class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
-        <h3 class="m-0">{{ t('warehouses.title') }}</h3>
+        <h3 class="m-0 ml-3">{{ t('warehouses.title') }}</h3>
         <div class="flex flex-wrap items-center gap-2">
           <Button :label="compact ? undefined : t('common.clearFilter')" :ripple="false" icon="pi pi-filter-slash"
             :disabled="!hasActiveFilter" :aria-label="t('common.clearFilter')" @click="clearFilters" />
         </div>
       </div>
       <div class="table-wrap-fill w-full max-w-full overflow-x-auto">
-        <DataTable :value="rows" data-key="id" lazy paginator :rows="pageSize" :first="first"
+        <DataTable :value="tableRows" data-key="id" lazy paginator :rows="pageSize" :first="first"
           :total-records="totalRecords" :rows-per-page-options="[50, 100, 200]" scrollable filter-display="row"
-          scroll-height="flex" :loading="loading" :paginator-template="paginatorTemplate"
+          scroll-height="flex" :paginator-template="paginatorTemplate"
           :current-page-report-template="pageReport" @page="onPage">
           <Column header="#">
-            <template #body="{ index }">{{ (page - 1) * pageSize + index + 1 }}</template>
+            <template #body="{ index }">
+              <Skeleton v-if="loading" width="1.25rem" height="1rem" />
+              <template v-else>{{ (page - 1) * pageSize + index + 1 }}</template>
+            </template>
           </Column>
           <Column field="factoryCode" :header="t('warehouses.factoryCode')" :show-filter-menu="false">
-            <template #body="{ data }">{{ data.factoryCode }}</template>
+            <template #body="{ data }">
+              <Skeleton v-if="loading" width="55%" height="1rem" />
+              <template v-else>{{ data.factoryCode }}</template>
+            </template>
             <template #filter>
               <InputText v-model="filterForm.factoryCode" class="w-full" size="small" type="text"
-                :placeholder="t('warehouses.filterPlaceholderFactoryCode')" @keydown.enter="resetAndLoad" />
+                :placeholder="t('warehouses.filterPlaceholderFactoryCode')"
+                @update:model-value="onFilterTextInput" />
             </template>
           </Column>
           <Column field="factoryName" :header="t('warehouses.factoryName')" :show-filter-menu="false">
-            <template #body="{ data }">{{ data.factoryName }}</template>
+            <template #body="{ data }">
+              <Skeleton v-if="loading" width="70%" height="1rem" />
+              <template v-else>{{ data.factoryName }}</template>
+            </template>
             <template #filter>
               <InputText v-model="filterForm.factoryName" class="w-full" size="small" type="text"
-                :placeholder="t('warehouses.filterPlaceholderFactoryName')" @keydown.enter="resetAndLoad" />
+                :placeholder="t('warehouses.filterPlaceholderFactoryName')"
+                @update:model-value="onFilterTextInput" />
             </template>
           </Column>
           <Column field="warehouseCode" :header="t('warehouses.warehouseCode')" :show-filter-menu="false">
-            <template #body="{ data }">{{ data.warehouseCode }}</template>
+            <template #body="{ data }">
+              <Skeleton v-if="loading" width="55%" height="1rem" />
+              <template v-else>{{ data.warehouseCode }}</template>
+            </template>
             <template #filter>
               <InputText v-model="filterForm.warehouseCode" class="w-full" size="small" type="text"
-                :placeholder="t('warehouses.filterPlaceholderWarehouseCode')" @keydown.enter="resetAndLoad" />
+                :placeholder="t('warehouses.filterPlaceholderWarehouseCode')"
+                @update:model-value="onFilterTextInput" />
             </template>
           </Column>
           <Column field="warehouseName" :header="t('warehouses.warehouseName')" :show-filter-menu="false">
-            <template #body="{ data }">{{ data.warehouseName }}</template>
+            <template #body="{ data }">
+              <Skeleton v-if="loading" width="70%" height="1rem" />
+              <template v-else>{{ data.warehouseName }}</template>
+            </template>
             <template #filter>
               <InputText v-model="filterForm.warehouseName" class="w-full" size="small" type="text"
-                :placeholder="t('warehouses.filterPlaceholderWarehouseName')" @keydown.enter="resetAndLoad" />
+                :placeholder="t('warehouses.filterPlaceholderWarehouseName')"
+                @update:model-value="onFilterTextInput" />
             </template>
           </Column>
         </DataTable>

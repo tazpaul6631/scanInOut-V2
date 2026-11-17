@@ -3,9 +3,6 @@ import type { Session } from '@/types'
 
 const SESSION_KEY = 'session'
 
-export const LOCAL_EMAIL = 'admin'
-export const LOCAL_PASSWORD = 'admin'
-
 export async function loadSession(): Promise<Session | null> {
   const rows = await query<{ value: string }>('SELECT value FROM settings WHERE key = ?', [SESSION_KEY])
   const raw = rows[0]?.value
@@ -25,8 +22,4 @@ export async function saveSession(session: Session): Promise<void> {
 
 export async function clearSession(): Promise<void> {
   await run('DELETE FROM settings WHERE key = ?', [SESSION_KEY])
-}
-
-export function sessionMatch(email: string, password: string): boolean {
-  return email.trim() === LOCAL_EMAIL && password === LOCAL_PASSWORD
 }

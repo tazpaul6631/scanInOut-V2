@@ -34,7 +34,7 @@ const router = createRouter({
           name: 'scan-results',
           component: () => import('@/views/web/scan/ScanResultView.vue'),
         },
-        { path: 'storages-2', name: 'storages-report-2', component: () => import('@/views/web/scan/ScanView.vue') },
+        // { path: 'storages-2', name: 'storages-report-2', component: () => import('@/views/web/scan/ScanView.vue') },
         // { path: 'scale', name: 'scale', component: () => import('@/views/web/ScaleView.vue') },
         // { path: 'hardware', name: 'hardware', component: () => import('@/views/web/HardwareView.vue') },
         // { path: 'media', name: 'media', component: () => import('@/views/web/MediaView.vue') },
