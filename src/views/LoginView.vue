@@ -13,7 +13,7 @@ import Message from '@/components/ui/AppMessage.vue'
 import { createLoginSchema } from '@/schemas/login'
 import { useSettingsStore } from '@/stores/settings'
 import LocaleSelect from '@/components/layout/LocaleSelect.vue'
-import { detectDeviceShell, homePathForShell, type DeviceShell } from '@/adapters/platform'
+import { detectDeviceShell, homePathForShell, isNative, type DeviceShell } from '@/adapters/platform'
 import { startNfcScan, stopNfcScan } from '@/adapters/nfc'
 import { useBarcodeWedge } from '@/composables/useBarcodeWedge'
 import { useAuthStore } from '@/stores/auth'
@@ -178,6 +178,9 @@ function clearCredentialError() {
 }
 
 function redirectAfterLogin() {
+  if (isNative() || detectDeviceShell() === 'mobile') {
+    return router.replace(homePathForShell())
+  }
   const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
   const target = redirect.startsWith('/') && !redirect.startsWith('/login')
     ? redirect

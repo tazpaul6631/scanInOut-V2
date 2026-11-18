@@ -1,7 +1,15 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAuthStore } from '@/stores/auth'
-import { homePathForShell } from '@/adapters/platform'
+import { detectDeviceShell, homePathForShell, isNative } from '@/adapters/platform'
+
+function isMobileShell() {
+  return isNative() || detectDeviceShell() === 'mobile'
+}
+
+function isMobileAppPath(path: string) {
+  return path === '/app/mobile' || path.startsWith('/app/mobile/')
+}
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -72,6 +80,9 @@ router.beforeEach((to) => {
   }
   if (!auth.isLoggedIn) {
     return { name: 'login', query: { redirect: to.fullPath } }
+  }
+  if (isMobileShell() && !isMobileAppPath(to.path)) {
+    return homePathForShell()
   }
   return true
 })
