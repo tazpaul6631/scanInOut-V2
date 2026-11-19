@@ -251,6 +251,7 @@ const en = {
     lockLocation: 'Select',
     boxPlaceholder: 'Scan/enter box code',
     boxState: 'Box state',
+    boxBroken: 'Damaged',
     user: 'Scanner',
     dateNow: 'Date/time',
     totalCount: 'Total: {n}',

@@ -253,6 +253,7 @@ const vi: MessageSchema = {
     lockLocation: 'Chọn',
     boxPlaceholder: 'Quét/nhập mã thùng',
     boxState: 'Trạng thái thùng',
+    boxBroken: 'Hỏng',
     user: 'Người quét',
     dateNow: 'Ngày giờ',
     totalCount: 'Tổng: {n}',

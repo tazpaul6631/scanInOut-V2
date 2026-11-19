@@ -251,6 +251,7 @@ const zhTW: MessageSchema = {
     lockLocation: '選定',
     boxPlaceholder: '掃描或輸入箱號',
     boxState: '箱狀態',
+    boxBroken: '損壞',
     user: '掃描人員',
     dateNow: '日期時間',
     totalCount: '合計：{n}',

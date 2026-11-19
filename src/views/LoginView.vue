@@ -18,12 +18,10 @@ import { startNfcScan, stopNfcScan } from '@/adapters/nfc'
 import { useBarcodeWedge } from '@/composables/useBarcodeWedge'
 import { useAuthStore } from '@/stores/auth'
 import {
-  queryBoxStateBaseList,
   queryScanTypeBaseList,
   queryWarehouseBaseList,
 } from '@/services/api/category'
 import { readApiFailure } from '@/services/api/error'
-import { replaceBoxStateBase } from '@/services/repositories/box-state'
 import type { ViewCategoryBase, ViewWarehouseBase } from '@/types/api'
 
 const NFC_SUPPRESS_MS = 1500
@@ -215,12 +213,6 @@ async function loginWithEmployeeCode(identifier: string) {
       scanType: scanType.value!,
     })
     if (ok && auth.isLoggedIn) {
-      try {
-        const res = await queryBoxStateBaseList()
-        if (res.success !== false && res.data) await replaceBoxStateBase(res.data)
-      } catch {
-        // keep existing SQLite cache
-      }
       await redirectAfterLogin()
       return
     }

@@ -4,14 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { useConfirm } from 'primevue/useconfirm'
 import dayjs from 'dayjs'
 import OverlayBadge from 'primevue/overlaybadge'
+import Checkbox from 'primevue/checkbox'
 import Button from '@/components/ui/AppButton.vue'
 import Dialog from '@/components/ui/AppDialog.vue'
 import InputText from '@/components/ui/AppInputText.vue'
 import FloatLabel from '@/components/ui/AppFloatLabel.vue'
-import Select from '@/components/ui/AppSelect.vue'
 import { useBarcodeWedge } from '@/composables/useBarcodeWedge'
 import { commandScan, commandScans, toScanApiItem } from '@/services/api/scan'
-import { listBoxStateBase } from '@/services/repositories/box-state'
 import {
   addScanLog,
   countScans,
@@ -30,7 +29,8 @@ import { maybeArchiveScansIfFull, SCAN_ARCHIVE_THRESHOLD } from '@/services/scan
 import { useAuthStore } from '@/stores/auth'
 import { useNetworkStore } from '@/stores/network'
 import type { ScanKind, ScanLog } from '@/types'
-import type { ViewCategoryBase } from '@/types/api'
+
+const BROKEN_BOX_STATE = 'Hỏng'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -40,8 +40,6 @@ const confirm = useConfirm()
 const locationDraft = ref('')
 const activeLocation = ref('')
 const boxDraft = ref('')
-const boxStateOptions = ref<{ label: string; value: string }[]>([])
-const boxStateLoading = ref(false)
 const sessionItems = ref<ScanLog[]>([])
 const locationTotal = ref(0)
 const dbTotal = ref(0)
@@ -114,36 +112,13 @@ async function refreshCounts() {
     : 0
 }
 
-function toSelectOptions(rows: ViewCategoryBase[] | null | undefined) {
-  return (rows ?? [])
-    .map((row) => {
-      const name = row.name?.trim() || row.code?.trim()
-      if (!name) return null
-      return { label: name, value: name }
-    })
-    .filter((row): row is { label: string; value: string } => Boolean(row))
-}
-
-async function loadBoxStateOptions() {
-  if (boxStateLoading.value) return
-  boxStateLoading.value = true
-  try {
-    await ensureSchema()
-    boxStateOptions.value = toSelectOptions(await listBoxStateBase())
-  } catch {
-    boxStateOptions.value = []
-  } finally {
-    boxStateLoading.value = false
-  }
-}
-
 onMounted(async () => {
-  await Promise.all([refreshCounts(), loadBoxStateOptions()])
+  await refreshCounts()
   await tryAutoArchive()
 })
 
 onActivated(async () => {
-  await Promise.all([refreshCounts(), loadBoxStateOptions()])
+  await refreshCounts()
   await tryAutoArchive()
 })
 
@@ -499,13 +474,19 @@ useBarcodeWedge(async (value) => {
               <span class="shrink-0 text-sm font-semibold text-muted">#{{ sessionItems.length - index }}</span>
               <div class="flex min-w-0 flex-1 items-center justify-between gap-2">
                 <span class="min-w-0 break-all font-medium">{{ item.value }}</span>
-                <span class="shrink-0 text-sm text-muted">{{ dayjs(item.createdAt).format('HH:mm:ss') }}</span>
+                <div class="flex shrink-0 items-center gap-5" @click.stop @touchstart.stop>
+                  <span class="text-sm text-muted">{{ dayjs(item.createdAt).format('HH:mm:ss') }}</span>
+                  <div class="flex shrink-0 items-center gap-1">
+                    <Checkbox :model-value="item.boxState?.trim() === BROKEN_BOX_STATE" binary
+                      :inputId="`box-broken-${item.id}`"
+                      @update:model-value="onRowBoxStateChange(item, $event ? BROKEN_BOX_STATE : '')" />
+                    <label :for="`box-broken-${item.id}`" class="m-0 cursor-pointer text-sm text-ink">
+                      {{ t('scan.boxBroken') }}
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
-            <Select :model-value="item.boxState || null" class="mt-1 w-full" size="small" :options="boxStateOptions"
-              option-label="label" option-value="value" :loading="boxStateLoading" show-clear
-              :placeholder="t('scan.boxState')" @click.stop @touchstart.stop
-              @update:model-value="onRowBoxStateChange(item, $event)" />
           </div>
         </div>
       </div>
