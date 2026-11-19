@@ -11,15 +11,16 @@ export const WEB_SCAN_SERVICE_EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'warehouse', header: '實盤位置(倉)\nActual Inventory Location (Warehouse)\nVị trí kiểm kê thực tế (Kho)', width: 15 },
   { key: 'locationCode', header: '實盤儲位\nActual Inventory Storage Location\nVị trí lưu trữ thực tế', width: 15 },
   { key: 'outBoxBarCode', header: '實盤外箱條碼標\nActual Carton Barcode Label\nNhãn mã vạch thùng carton thực tế', width: 18 },
-  { key: 'warehouseName', header: 'ERP現在位置(倉)\nCurrent ERP Location (Warehouse)\nVị trí hiện tại trên ERP (Kho)', width: 20 },
+  { key: 'boxState', header: '箱狀態\nBox State\nTrạng thái thùng', width: 15 },
+  { key: 'warehouseName', header: 'ERP現在位置(倉)\nCurrent ERP Location (Warehouse)\nVị trí hiện tại trên ERP (Kho)', width: 15 },
   { key: 'storageName', header: 'ERP現在儲位\nCurrent ERP Storage Location\nVị trí lưu trữ hiện tại trên ERP', width: 15 },
-  { key: 'cutNo', header: 'JHV number', width: 25 },
+  { key: 'cutNo', header: 'JHV number', width: 18 },
   { key: 'smStyleCode', header: '型體\nModel\nKiểu dáng', width: 25 },
   { key: 'styleName', header: 'JHV Art', width: 15 },
   { key: 'sizeName', header: '尺碼\nSize\nCỡ giày', width: 17, wrap: true },
   { key: 'boxNo', header: '箱號\nCarton Number\nSố thùng', width: 10 },
   { key: 'perCount', header: '雙數\nPairs\nSố đôi', width: 10 },
-  { key: 'lastLeaveDate', header: 'Current CRD/CSD\nCRD/CSD hiện tại', width: 20 },
+  { key: 'lastLeaveDate', header: 'Current CRD/CSD\nCRD/CSD hiện tại', width: 15 },
 ]
 
 function formatExportDate(value: string | null | undefined): string {
@@ -47,6 +48,7 @@ export function mapWebScanServiceExportRow(
     outBoxBarCode: row.outBoxBarCode?.trim() || '',
     warehouseName: row.warehouseName?.trim() || '',
     storageName: row.storageName?.trim() || '',
+    boxState: row.boxState?.trim() || '',
     cutNo: row.cutNo?.trim() || '',
     smStyleCode: row.smStyleCode?.trim() || '',
     styleName: row.styleName?.trim() || '',

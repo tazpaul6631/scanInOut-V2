@@ -18,6 +18,7 @@ export interface ScanApiItem {
   scanBy: string
   scanType: string
   warehouse: string
+  boxState: string
 }
 
 export function toScanApiItem(row: ScanLog, status = row.status ?? 0): ScanApiItem {
@@ -31,6 +32,7 @@ export function toScanApiItem(row: ScanLog, status = row.status ?? 0): ScanApiIt
     scanBy: row.userCode?.trim() || row.userEmail?.trim() || '',
     scanType: session?.scanType ?? '',
     warehouse: session?.warehouse ?? '',
+    boxState: row.boxState?.trim() || '',
   }
 }
 

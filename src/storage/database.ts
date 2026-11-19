@@ -121,6 +121,25 @@ async function migrateSchema(fromVersion: number): Promise<void> {
     )
     await execute(`CREATE INDEX IF NOT EXISTS idx_scan_logs_status ON scan_logs(status)`)
   }
+  if (fromVersion < 6) {
+    await ensureBoxStateArtifacts()
+  }
+}
+
+/** Idempotent: safe to call every init / after HMR when schema_meta already ≥ 6. */
+async function ensureBoxStateArtifacts(): Promise<void> {
+  await ensureColumn(
+    'scan_logs',
+    'box_state',
+    `ALTER TABLE scan_logs ADD COLUMN box_state TEXT NOT NULL DEFAULT ''`,
+  )
+  await execute(
+    `CREATE TABLE IF NOT EXISTS box_state_base (
+      id INTEGER PRIMARY KEY,
+      code TEXT,
+      name TEXT
+    )`,
+  )
 }
 
 async function applySchema(): Promise<void> {
@@ -131,6 +150,7 @@ async function applySchema(): Promise<void> {
   if (!rows.length) {
     await migrateSchema(0)
     await run('INSERT INTO schema_meta (version) VALUES (?)', [SCHEMA_VERSION])
+    await ensureBoxStateArtifacts()
     return
   }
   const current = Number(rows[0]?.version ?? 0)
@@ -138,6 +158,7 @@ async function applySchema(): Promise<void> {
     await migrateSchema(current)
     await run('UPDATE schema_meta SET version = ?', [SCHEMA_VERSION])
   }
+  await ensureBoxStateArtifacts()
 }
 
 export async function initDatabase(): Promise<void> {
@@ -149,6 +170,15 @@ export async function initDatabase(): Promise<void> {
   }
   await applySchema()
   ready = true
+}
+
+/** Re-run idempotent column/table ensures (e.g. after HMR when init already ran). */
+export async function ensureSchema(): Promise<void> {
+  if (!ready) {
+    await initDatabase()
+    return
+  }
+  await ensureBoxStateArtifacts()
 }
 
 export async function query<T = Record<string, unknown>>(

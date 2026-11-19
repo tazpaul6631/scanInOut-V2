@@ -46,12 +46,18 @@ export const SCHEMA_STATEMENTS = [
     user_email TEXT,
     created_at INTEGER NOT NULL,
     synced INTEGER NOT NULL DEFAULT 0,
-    status INTEGER NOT NULL DEFAULT 0
+    status INTEGER NOT NULL DEFAULT 0,
+    box_state TEXT NOT NULL DEFAULT ''
   )`,
   `CREATE INDEX IF NOT EXISTS idx_scan_logs_value ON scan_logs(value)`,
   `CREATE INDEX IF NOT EXISTS idx_scan_logs_location ON scan_logs(location)`,
   `CREATE INDEX IF NOT EXISTS idx_scan_logs_synced ON scan_logs(synced)`,
   `CREATE INDEX IF NOT EXISTS idx_scan_logs_status ON scan_logs(status)`,
+  `CREATE TABLE IF NOT EXISTS box_state_base (
+    id INTEGER PRIMARY KEY,
+    code TEXT,
+    name TEXT
+  )`,
   `CREATE TABLE IF NOT EXISTS scale_readings (
     id TEXT PRIMARY KEY,
     weight REAL NOT NULL,
@@ -71,4 +77,4 @@ export const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_media_created ON media(created_at)`,
 ]
 
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6

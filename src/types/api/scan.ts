@@ -7,6 +7,7 @@ export interface ViewScanResult {
   warehouse?: string | null
   scanAt?: string | null
   scanBy?: string | null
+  boxState?: string | null
 }
 
 export interface ScanQueryResultRequest {
@@ -31,6 +32,7 @@ export interface ScanQueryResultRequest {
   perCount?: string | null
   lastLeaveDateFrom?: string | null
   lastLeaveDateTo?: string | null
+  boxState?: string | null
   isWarning?: boolean | null
   page?: number
   pageSize?: number
@@ -66,6 +68,7 @@ export interface ViewScanServiceResult {
   boxNo?: number | null
   perCount?: number | null
   lastLeaveDate?: string | null
+  boxState?: string | null
   isWarning?: boolean | null
 }
 

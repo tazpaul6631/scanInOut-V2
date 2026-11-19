@@ -140,6 +140,7 @@ const SERVICE_WARNING_DETAIL_KEYS = [
   'boxNo',
   'perCount',
   'lastLeaveDate',
+  'boxState',
 ] as const
 
 const WARN_ONLY_IF_VALUE = new Set(['warehouse', 'locationCode'])

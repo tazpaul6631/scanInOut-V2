@@ -40,6 +40,11 @@ export const WEB_SCAN_EXPORT_COLUMNS: ExportColumn[] = [
     header: '實盤外箱條碼標籤\nActual Carton Barcode Label\nNhãn mã vạch thùng carton thực tế',
     width: 38,
   },
+  {
+    key: 'boxState',
+    header: '箱狀態\nBox State\nTrạng thái thùng',
+    width: 15,
+  },
 ]
 
 export function mapWebScanExportRow(
@@ -53,10 +58,11 @@ export function mapWebScanExportRow(
     scanType: row.scanType?.trim() || '',
     method:
       row.method === 'Input' ? 'KeyInput'
-      : row.method === 'Laser' ? 'Scan'
-        : row.method?.trim() || '',
+        : row.method === 'Laser' ? 'Scan'
+          : row.method?.trim() || '',
     warehouse: row.warehouse?.trim() || '',
     location: row.locationCode?.trim() || '',
     barcode: row.boxCode?.trim() || '',
+    boxState: row.boxState?.trim() || '',
   }
 }

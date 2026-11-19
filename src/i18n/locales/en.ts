@@ -189,6 +189,7 @@ const en = {
     storageName: 'Current ERP storage location',
     excelAll: 'Export Excel',
     excelAllProgress: 'Exporting {done} / {total}…',
+    boxState: 'Box state',
   },
   scan: {
     subtitle: 'Scan QR / barcode / NFC',
@@ -249,6 +250,7 @@ const en = {
     changeLocation: 'Change',
     lockLocation: 'Select',
     boxPlaceholder: 'Scan/enter box code',
+    boxState: 'Box state',
     user: 'Scanner',
     dateNow: 'Date/time',
     totalCount: 'Total: {n}',

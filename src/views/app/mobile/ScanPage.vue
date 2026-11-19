@@ -8,8 +8,10 @@ import Button from '@/components/ui/AppButton.vue'
 import Dialog from '@/components/ui/AppDialog.vue'
 import InputText from '@/components/ui/AppInputText.vue'
 import FloatLabel from '@/components/ui/AppFloatLabel.vue'
+import Select from '@/components/ui/AppSelect.vue'
 import { useBarcodeWedge } from '@/composables/useBarcodeWedge'
 import { commandScan, commandScans, toScanApiItem } from '@/services/api/scan'
+import { listBoxStateBase } from '@/services/repositories/box-state'
 import {
   addScanLog,
   countScans,
@@ -21,11 +23,14 @@ import {
   listScanLogsByLocation,
   listUnsyncedScansPage,
   markScanDeleted,
+  updateScanBoxState,
 } from '@/services/repositories/scans'
+import { ensureSchema } from '@/storage/database'
 import { maybeArchiveScansIfFull, SCAN_ARCHIVE_THRESHOLD } from '@/services/scan-archive'
 import { useAuthStore } from '@/stores/auth'
 import { useNetworkStore } from '@/stores/network'
 import type { ScanKind, ScanLog } from '@/types'
+import type { ViewCategoryBase } from '@/types/api'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -35,6 +40,8 @@ const confirm = useConfirm()
 const locationDraft = ref('')
 const activeLocation = ref('')
 const boxDraft = ref('')
+const boxStateOptions = ref<{ label: string; value: string }[]>([])
+const boxStateLoading = ref(false)
 const sessionItems = ref<ScanLog[]>([])
 const locationTotal = ref(0)
 const dbTotal = ref(0)
@@ -107,13 +114,36 @@ async function refreshCounts() {
     : 0
 }
 
+function toSelectOptions(rows: ViewCategoryBase[] | null | undefined) {
+  return (rows ?? [])
+    .map((row) => {
+      const name = row.name?.trim() || row.code?.trim()
+      if (!name) return null
+      return { label: name, value: name }
+    })
+    .filter((row): row is { label: string; value: string } => Boolean(row))
+}
+
+async function loadBoxStateOptions() {
+  if (boxStateLoading.value) return
+  boxStateLoading.value = true
+  try {
+    await ensureSchema()
+    boxStateOptions.value = toSelectOptions(await listBoxStateBase())
+  } catch {
+    boxStateOptions.value = []
+  } finally {
+    boxStateLoading.value = false
+  }
+}
+
 onMounted(async () => {
-  await refreshCounts()
+  await Promise.all([refreshCounts(), loadBoxStateOptions()])
   await tryAutoArchive()
 })
 
 onActivated(async () => {
-  await refreshCounts()
+  await Promise.all([refreshCounts(), loadBoxStateOptions()])
   await tryAutoArchive()
 })
 
@@ -180,6 +210,7 @@ async function saveBox(value: string, kind: ScanKind, format: string): Promise<S
     location,
     userCode: session?.code ?? null,
     userEmail: session?.email ?? null,
+    boxState: '',
   })
   sessionItems.value.unshift(item)
   trimSessionList()
@@ -209,6 +240,20 @@ function pushCommandInBackground(row: ScanLog, status: number) {
       // keep pending for batch sync
     }
   })()
+}
+
+async function onRowBoxStateChange(item: ScanLog, value: string | null | undefined) {
+  const next = value?.trim() || ''
+  item.boxState = next
+  item.synced = false
+  try {
+    await ensureSchema()
+    await updateScanBoxState(item.id, next)
+    if (network.online) pushCommandInBackground(item, item.status)
+    await refreshCounts()
+  } catch {
+    // keep in-memory choice; retry via sync when online
+  }
 }
 
 async function saveLocationManual() {
@@ -457,6 +502,10 @@ useBarcodeWedge(async (value) => {
                 <span class="shrink-0 text-sm text-muted">{{ dayjs(item.createdAt).format('HH:mm:ss') }}</span>
               </div>
             </div>
+            <Select :model-value="item.boxState || null" class="mt-1 w-full" size="small" :options="boxStateOptions"
+              option-label="label" option-value="value" :loading="boxStateLoading" show-clear
+              :placeholder="t('scan.boxState')" @click.stop @touchstart.stop
+              @update:model-value="onRowBoxStateChange(item, $event)" />
           </div>
         </div>
       </div>
@@ -466,7 +515,6 @@ useBarcodeWedge(async (value) => {
         <i class="pi pi-inbox text-[1.75rem]" />
         <p class="m-0 font-semibold text-ink">{{ t('scan.emptyTitle') }}</p>
       </div>
-
     </div>
 
     <Dialog v-model:visible="noticeOpen" modal :closable="false" :header="t('scan.noticeTitle')"

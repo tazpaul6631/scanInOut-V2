@@ -18,6 +18,7 @@ interface ScanRow {
   created_at: number
   synced: number | null
   status: number | null
+  box_state: string | null
 }
 
 function mapScan(row: ScanRow): ScanLog {
@@ -33,6 +34,7 @@ function mapScan(row: ScanRow): ScanLog {
     createdAt: row.created_at,
     status: Number(row.status ?? 0),
     synced: Number(row.synced ?? 0) === 1,
+    boxState: row.box_state?.trim() ?? '',
   }
 }
 
@@ -44,6 +46,7 @@ export async function addScanLog(input: {
   location?: string
   userCode?: string | null
   userEmail?: string | null
+  boxState?: string | null
 }): Promise<ScanLog> {
   const item: ScanLog = {
     id: createId(),
@@ -57,10 +60,11 @@ export async function addScanLog(input: {
     createdAt: now(),
     status: 0,
     synced: false,
+    boxState: input.boxState?.trim() || '',
   }
   await run(
-    `INSERT INTO scan_logs (id, kind, value, format, direction, location, user_code, user_email, created_at, synced, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO scan_logs (id, kind, value, format, direction, location, user_code, user_email, created_at, synced, status, box_state)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       item.id,
       item.kind,
@@ -73,6 +77,7 @@ export async function addScanLog(input: {
       item.createdAt,
       0,
       0,
+      item.boxState,
     ],
   )
   void appendScanLiveLog(item)
@@ -175,6 +180,13 @@ export async function markScansSynced(ids: string[]): Promise<void> {
 /** Soft-delete for offline: status=-1, re-queue sync. */
 export async function markScanDeleted(id: string): Promise<void> {
   await run(`UPDATE scan_logs SET status = -1, synced = 0 WHERE id = ?`, [id])
+}
+
+export async function updateScanBoxState(id: string, boxState: string): Promise<void> {
+  await run(`UPDATE scan_logs SET box_state = ?, synced = 0 WHERE id = ?`, [
+    boxState.trim(),
+    id,
+  ])
 }
 
 /**

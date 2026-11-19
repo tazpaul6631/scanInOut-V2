@@ -14,7 +14,11 @@ import Select from '@/components/ui/AppSelect.vue'
 import DataTable from '@/components/ui/AppDataTable.vue'
 import Column from '@/components/ui/AppColumn.vue'
 import { queryScanResult } from '@/services/api/scan'
-import { queryScanTypeBaseList, queryWarehouseBaseList } from '@/services/api/category'
+import {
+  queryBoxStateBaseList,
+  queryScanTypeBaseList,
+  queryWarehouseBaseList,
+} from '@/services/api/category'
 import { readApiFailure } from '@/services/api/error'
 import { exportWebScanWorkbook, exportWebScanWorkbookFromQuery } from '@/services/scan-web-export'
 import { formatDate, toLocalFileStamp } from '@/utils/format'
@@ -68,6 +72,7 @@ function emptyFilterForm(): ScanQueryResultRequest {
     scanType: null,
     warehouse: null,
     scanBy: null,
+    boxState: null,
   }
 }
 
@@ -87,8 +92,10 @@ function formatMethod(method: string | null | undefined) {
 
 const warehouseOptions = ref<{ label: string; value: string }[]>([])
 const scanTypeOptions = ref<{ label: string; value: string }[]>([])
+const boxStateOptions = ref<{ label: string; value: string }[]>([])
 const warehouseLoading = ref(false)
 const scanTypeLoading = ref(false)
+const boxStateLoading = ref(false)
 
 function isCompleteScanAtRange(value: Date[] | null | undefined): value is [Date, Date] {
   return Boolean(value?.[0] && value?.[1])
@@ -157,6 +164,19 @@ async function loadScanTypeOptions() {
   }
 }
 
+async function loadBoxStateOptions() {
+  if (boxStateLoading.value) return
+  boxStateLoading.value = true
+  try {
+    const res = await queryBoxStateBaseList()
+    boxStateOptions.value = toSelectOptions(res.data)
+  } catch {
+    boxStateOptions.value = []
+  } finally {
+    boxStateLoading.value = false
+  }
+}
+
 function refreshShell() {
   shell.value = detectDeviceShell()
 }
@@ -170,12 +190,14 @@ function buildQueryParams(): ScanQueryResultRequest {
   const scanType = form.scanType?.trim()
   const warehouse = form.warehouse?.trim()
   const scanBy = form.scanBy?.trim()
+  const boxState = form.boxState?.trim()
   if (locationCode) params.locationCode = locationCode
   if (boxCode) params.boxCode = boxCode
   if (method === 'Input' || method === 'Laser') params.method = method
   if (scanType) params.scanType = scanType
   if (warehouse) params.warehouse = warehouse
   if (scanBy) params.scanBy = scanBy
+  if (boxState) params.boxState = boxState
   if (isCompleteScanAtRange(filterScanAt.value)) {
     const [from, to] = filterScanAt.value
     params.scanAtFrom = `${dayjs(from).format('YYYY-MM-DD')}T00:00:00`
@@ -347,12 +369,12 @@ onUnmounted(() => {
           :total-records="totalRecords" :rows-per-page-options="[50, 100, 200]" scrollable filter-display="row"
           scroll-height="flex" :paginator-template="paginatorTemplate" :current-page-report-template="pageReport"
           @page="onPage">
-          <Column header="#">
+          <!-- <Column header="#">
             <template #body="{ index }">
               <Skeleton v-if="loading" width="1.25rem" height="1rem" />
               <template v-else>{{ (page - 1) * pageSize + index + 1 }}</template>
-            </template>
-          </Column>
+</template>
+</Column> -->
           <Column field="scanAt" :header="t('scan.scanDate')" :show-filter-menu="false">
             <template #body="{ data }">
               <Skeleton v-if="loading" width="70%" height="1rem" />
@@ -427,6 +449,18 @@ onUnmounted(() => {
             <template #filter>
               <InputText v-model="filterForm.boxCode" class="w-full" size="small" type="text"
                 :placeholder="t('scan.filterPlaceholderBoxCode')" @update:model-value="onFilterTextInput" />
+            </template>
+          </Column>
+          <Column field="boxState" :header="t('scan.boxState')" :show-filter-menu="false">
+            <template #body="{ data }">
+              <Skeleton v-if="loading" width="70%" height="1rem" />
+              <template v-else>{{ data.boxState ?? '—' }}</template>
+            </template>
+            <template #filter>
+              <Select v-model="filterForm.boxState" class="w-full" size="small" :options="boxStateOptions"
+                option-label="label" option-value="value" :loading="boxStateLoading"
+                :placeholder="t('scan.boxState')" show-clear @show="loadBoxStateOptions"
+                @update:model-value="resetAndLoad" />
             </template>
           </Column>
           <template #empty>

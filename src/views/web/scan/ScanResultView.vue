@@ -8,6 +8,7 @@ import DatePicker from 'primevue/datepicker'
 import Checkbox from 'primevue/checkbox'
 import Skeleton from 'primevue/skeleton'
 import ProgressBar from 'primevue/progressbar'
+import FloatLabel from 'primevue/floatlabel'
 import Button from '@/components/ui/AppButton.vue'
 import Dialog from '@/components/ui/AppDialog.vue'
 import InputText from '@/components/ui/AppInputText.vue'
@@ -15,7 +16,11 @@ import Select from '@/components/ui/AppSelect.vue'
 import DataTable from '@/components/ui/AppDataTable.vue'
 import Column from '@/components/ui/AppColumn.vue'
 import { queryScanServiceResult } from '@/services/api/scan'
-import { queryScanTypeBaseList, queryWarehouseBaseList } from '@/services/api/category'
+import {
+  queryBoxStateBaseList,
+  queryScanTypeBaseList,
+  queryWarehouseBaseList,
+} from '@/services/api/category'
 import { readApiFailure } from '@/services/api/error'
 import {
   exportWebScanServiceWorkbook,
@@ -49,7 +54,7 @@ const exportProgressPercent = computed(() => {
 })
 const isWarningOnly = ref(false)
 const page = ref(1)
-const pageSize = ref(50)
+const pageSize = ref(20)
 const totalRecords = ref(0)
 const first = computed(() => (page.value - 1) * pageSize.value)
 const shell = ref<DeviceShell>(detectDeviceShell())
@@ -86,6 +91,7 @@ function emptyFilterForm(): ScanQueryResultRequest {
     sizeName: null,
     boxNo: null,
     perCount: null,
+    boxState: null,
   }
 }
 
@@ -106,8 +112,10 @@ function formatMethod(method: string | null | undefined) {
 
 const warehouseOptions = ref<{ label: string; value: string }[]>([])
 const scanTypeOptions = ref<{ label: string; value: string }[]>([])
+const boxStateOptions = ref<{ label: string; value: string }[]>([])
 const warehouseLoading = ref(false)
 const scanTypeLoading = ref(false)
+const boxStateLoading = ref(false)
 
 function isCompleteScanAtRange(value: Date[] | null | undefined): value is [Date, Date] {
   return Boolean(value?.[0] && value?.[1])
@@ -177,6 +185,19 @@ async function loadScanTypeOptions() {
   }
 }
 
+async function loadBoxStateOptions() {
+  if (boxStateLoading.value) return
+  boxStateLoading.value = true
+  try {
+    const res = await queryBoxStateBaseList()
+    boxStateOptions.value = toSelectOptions(res.data)
+  } catch {
+    boxStateOptions.value = []
+  } finally {
+    boxStateLoading.value = false
+  }
+}
+
 function refreshShell() {
   shell.value = detectDeviceShell()
 }
@@ -232,6 +253,7 @@ function buildQueryParams(): ScanQueryResultRequest {
   const sizeName = form.sizeName?.trim()
   const boxNo = form.boxNo?.trim()
   const perCount = form.perCount?.trim()
+  const boxState = form.boxState?.trim()
   if (locationCode) params.locationCode = locationCode
   if (boxCode) params.boxCode = boxCode
   if (method === 'Input' || method === 'Laser') params.method = method
@@ -247,6 +269,7 @@ function buildQueryParams(): ScanQueryResultRequest {
   if (sizeName) params.sizeName = sizeName
   if (boxNo) params.boxNo = boxNo
   if (perCount) params.perCount = perCount
+  if (boxState) params.boxState = boxState
   if (isCompleteScanAtRange(filterScanAt.value)) {
     const [from, to] = filterScanAt.value
     params.scanAtFrom = `${dayjs(from).format('YYYY-MM-DD')}T00:00:00`
@@ -388,6 +411,7 @@ async function exportExcelAll() {
       (done, total) => {
         exportProgress.value = { done, total }
       },
+      200,
     )
     toast.add({
       severity: 'success',
@@ -423,7 +447,7 @@ onUnmounted(() => {
 <template>
   <div class="page-fill">
     <div class="page-fill-panel col-span-full rounded-2xl border border-line bg-white p-2.5 shadow-panel">
-      <div class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
+      <div class="mb-3 flex shrink-0 flex-wrap items-center justify-space-between gap-2">
         <div class="flex flex-col gap-2">
           <h3 class="m-0 ml-3">{{ t('scanResult.title') }}</h3>
           <div class="ml-3 flex items-center gap-2">
@@ -433,6 +457,19 @@ onUnmounted(() => {
               {{ t('scanResult.warningOnly') }}
             </label>
           </div>
+        </div>
+        <div class="ml-auto flex items-center gap-2">
+          <FloatLabel variant="on">
+            <DatePicker v-model="filterScanAt" selection-mode="range" :manual-input="false" class="w-[16rem]"
+              size="small" date-format="dd/mm/yy" show-icon show-clear @update:model-value="onScanAtRangeUpdate" />
+            <label for="scan-result-scan-at">{{ t('scanResult.scanAt') }}</label>
+          </FloatLabel>
+          <FloatLabel variant="on">
+            <DatePicker v-model="filterLastLeaveDate" selection-mode="range" :manual-input="false" class="w-[16rem]"
+              size="small" date-format="dd/mm/yy" show-icon show-clear
+              @update:model-value="onLastLeaveDateRangeUpdate" />
+            <label for="scan-result-last-leave-date">{{ t('scanResult.lastLeaveDate') }}</label>
+          </FloatLabel>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <Button :label="compact ? undefined : t('common.clearFilter')" :ripple="false" icon="pi pi-filter-slash"
@@ -447,16 +484,15 @@ onUnmounted(() => {
       </div>
       <div class="table-wrap-fill w-full max-w-full overflow-x-auto">
         <DataTable :value="tableRows" data-key="id" lazy paginator :rows="pageSize" :first="first"
-          :total-records="totalRecords" :rows-per-page-options="[50, 100, 200]" scrollable showGridlines
+          :total-records="totalRecords" :rows-per-page-options="[20, 50, 100]" scrollable showGridlines
           filter-display="row" scroll-height="flex" :paginator-template="paginatorTemplate"
           :current-page-report-template="pageReport" :row-class="warningRowClass" @page="onPage">
-          <Column header="#" header-style="width: 48px; min-width: 48px; max-width: 48px"
-            body-style="width: 48px; min-width: 48px; max-width: 48px; text-align: center" frozen>
+          <!-- <Column header="#" body-style=" text-align: center" frozen>
             <template #body="{ index }">
               <Skeleton v-if="loading" width="1.25rem" height="1rem" class="mx-auto" />
               <template v-else>{{ (page - 1) * pageSize + index + 1 }}</template>
-            </template>
-          </Column>
+</template>
+</Column> -->
           <Column field="scanAt" :header="t('scanResult.scanAt')" :show-filter-menu="false"
             header-style="width: 120px; min-width: 120px; max-width: 120px"
             body-style="width: 120px; min-width: 120px; max-width: 120px" frozen>
@@ -464,15 +500,11 @@ onUnmounted(() => {
               <Skeleton v-if="loading" width="70%" height="1rem" />
               <template v-else>{{ formatDate(data.scanAt) }}</template>
             </template>
-            <template #filter>
-              <DatePicker v-model="filterScanAt" selection-mode="range" :manual-input="false" class="w-full"
-                placeholder="..." size="small" date-format="dd/mm/yy" show-icon show-clear
-                @update:model-value="onScanAtRangeUpdate" />
-            </template>
           </Column>
           <Column field="scanBy" :header="t('scanResult.scanBy')" :show-filter-menu="false"
-            header-style="width: 120px; min-width: 120px; max-width: 120px"
-            body-style="width: 120px; min-width: 120px; max-width: 120px" frozen>
+            header-style="width: 100px; min-width: 100px; max-width: 100px"
+            body-style="width: 100px; min-width: 100px; max-width: 100px"
+            filter-header-style="width: 100px; min-width: 100px; max-width: 100px; overflow: hidden" frozen>
             <template #body="{ data }">
               <Skeleton v-if="loading" width="60%" height="1rem" />
               <template v-else>{{ data.scanBy ?? '—' }}</template>
@@ -483,9 +515,9 @@ onUnmounted(() => {
             </template>
           </Column>
           <Column field="scanType" :header="t('scanResult.scanType')" :show-filter-menu="false"
-            header-style="width: 120px; min-width: 120px; max-width: 120px"
-            body-style="width: 120px; min-width: 120px; max-width: 120px"
-            filter-header-style="width: 120px; min-width: 120px; max-width: 120px; overflow: hidden" frozen>
+            header-style="width: 110px; min-width: 110px; max-width: 110px"
+            body-style="width: 110px; min-width: 110px; max-width: 110px"
+            filter-header-style="width: 110px; min-width: 110px; max-width: 110px; overflow: hidden" frozen>
             <template #body="{ data }">
               <Skeleton v-if="loading" width="65%" height="1rem" />
               <template v-else>{{ data.scanType ?? '—' }}</template>
@@ -497,12 +529,12 @@ onUnmounted(() => {
             </template>
           </Column>
           <Column field="method" :header="t('scanResult.method')" :show-filter-menu="false"
-            header-style="width: 120px; min-width: 120px; max-width: 120px"
-            body-style="width: 120px; min-width: 120px; max-width: 120px"
-            filter-header-style="width: 120px; min-width: 120px; max-width: 120px; overflow: hidden" frozen>
+            header-style="width: 110px; min-width: 110px; max-width: 110px"
+            body-style="width: 110px; min-width: 110px; max-width: 110px"
+            filter-header-style="width: 110px; min-width: 110px; max-width: 110px; overflow: hidden" frozen>
             <template #body="{ data }">
               <Skeleton v-if="loading" width="50%" height="1rem" />
-              <template v-else>{{ formatMethod(data.method) }}</template>
+              <template v-else>{{ formatMethod(data.method) ?? '—' }}</template>
             </template>
             <template #filter>
               <Select v-model="filterForm.method" class="w-full max-w-full min-w-0" size="small"
@@ -513,7 +545,8 @@ onUnmounted(() => {
           <Column field="warehouse" :header="t('scanResult.warehouse')" :show-filter-menu="false"
             header-style="width: 140px; min-width: 140px; max-width: 140px"
             body-style="width: 140px; min-width: 140px; max-width: 140px; padding: 0"
-            filter-header-style="width: 140px; min-width: 140px; max-width: 140px; overflow: hidden" frozen>
+            filter-header-style="width: 140px; min-width: 140px; max-width: 140px; overflow: hidden" alignFrozen="Left"
+            frozen>
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3"
                 :class="hasCellText(data.warehouse) ? 'scan-result-warn-fill' : undefined">
@@ -521,16 +554,16 @@ onUnmounted(() => {
                 <template v-else>{{ data.warehouse ?? '—' }}</template>
               </div>
             </template>
-            <!-- <template #filter>
+            <template #filter>
               <Select v-model="filterForm.warehouse" class="w-full max-w-full min-w-0" size="small"
                 :options="warehouseOptions" option-label="label" option-value="value" placeholder="..."
                 :loading="warehouseLoading" show-clear @show="loadWarehouseOptions"
                 @update:model-value="resetAndLoad" />
-            </template> -->
-            <template #filter>
+            </template>
+            <!-- <template #filter>
               <InputText v-model="filterForm.warehouse" class="w-full" size="small" type="text" placeholder="..."
                 @update:model-value="onFilterTextInput" />
-            </template>
+            </template> -->
           </Column>
           <Column field="locationCode" :header="t('scanResult.locationCode')" :show-filter-menu="false"
             header-style="width: 90px; min-width: 90px; max-width: 90px"
@@ -554,12 +587,29 @@ onUnmounted(() => {
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
                 <Skeleton v-if="loading" width="75%" height="1rem" />
-                <template v-else>{{ data.outBoxBarCode }}</template>
+                <template v-else>{{ data.outBoxBarCode ?? '—' }}</template>
               </div>
             </template>
             <template #filter>
               <InputText v-model="filterForm.outBoxBarCode" class="w-full" size="small" type="text" placeholder="..."
                 @update:model-value="onFilterTextInput" />
+            </template>
+          </Column>
+          <Column field="boxState" :header="t('scanResult.boxState')" :show-filter-menu="false"
+            header-style="width: 140px; min-width: 140px; max-width: 140px"
+            body-style="width: 140px; min-width: 140px; max-width: 140px; padding: 0"
+            filter-header-style="width: 140px; min-width: 140px; max-width: 140px; overflow: hidden"
+            body-class="scan-result-warn-cell">
+            <template #body="{ data }">
+              <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
+                <Skeleton v-if="loading" width="70%" height="1rem" />
+                <template v-else>{{ data.boxState ?? '—' }}</template>
+              </div>
+            </template>
+            <template #filter>
+              <Select v-model="filterForm.boxState" class="w-full max-w-full min-w-0" size="small"
+                :options="boxStateOptions" option-label="label" option-value="value" placeholder="..."
+                :loading="boxStateLoading" show-clear @show="loadBoxStateOptions" @update:model-value="resetAndLoad" />
             </template>
           </Column>
           <Column field="warehouseName" :header="t('scanResult.warehouseName')" :show-filter-menu="false"
@@ -569,13 +619,19 @@ onUnmounted(() => {
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
                 <Skeleton v-if="loading" width="70%" height="1rem" />
-                <template v-else>{{ data.warehouseName }}</template>
+                <template v-else>{{ data.warehouseName ?? '—' }}</template>
               </div>
             </template>
             <template #filter>
+              <Select v-model="filterForm.warehouseName" class="w-full max-w-full min-w-0" size="small"
+                :options="warehouseOptions" option-label="label" option-value="value" placeholder="..."
+                :loading="warehouseLoading" show-clear @show="loadWarehouseOptions"
+                @update:model-value="resetAndLoad" />
+            </template>
+            <!-- <template #filter>
               <InputText v-model="filterForm.warehouseName" class="w-full" size="small" type="text" placeholder="..."
                 @update:model-value="onFilterTextInput" />
-            </template>
+            </template> -->
           </Column>
           <Column field="storageName" :header="t('scanResult.storageName')" :show-filter-menu="false"
             header-style="width: 100px; min-width: 100px; max-width: 100px"
@@ -584,7 +640,7 @@ onUnmounted(() => {
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
                 <Skeleton v-if="loading" width="60%" height="1rem" />
-                <template v-else>{{ data.storageName }}</template>
+                <template v-else>{{ data.storageName ?? '—' }}</template>
               </div>
             </template>
             <template #filter>
@@ -593,13 +649,13 @@ onUnmounted(() => {
             </template>
           </Column>
           <Column field="cutNo" :header="t('scanResult.cutNo')" :show-filter-menu="false"
-            header-style="width: 250px; min-width: 250px; max-width: 250px"
-            body-style="width: 250px; min-width: 250px; max-width: 250px; padding: 0"
+            header-style="width: 160px; min-width: 160px; max-width: 160px"
+            body-style="width: 160px; min-width: 160px; max-width: 160px; padding: 0"
             body-class="scan-result-warn-cell">
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
                 <Skeleton v-if="loading" width="80%" height="1rem" />
-                <template v-else>{{ data.cutNo }}</template>
+                <template v-else>{{ data.cutNo ?? '—' }}</template>
               </div>
             </template>
             <template #filter>
@@ -614,7 +670,7 @@ onUnmounted(() => {
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
                 <Skeleton v-if="loading" width="80%" height="1rem" />
-                <template v-else>{{ data.smStyleCode }}</template>
+                <template v-else>{{ data.smStyleCode ?? '—' }}</template>
               </div>
             </template>
             <template #filter>
@@ -629,7 +685,7 @@ onUnmounted(() => {
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
                 <Skeleton v-if="loading" width="70%" height="1rem" />
-                <template v-else>{{ data.styleName }}</template>
+                <template v-else>{{ data.styleName ?? '—' }}</template>
               </div>
             </template>
             <template #filter>
@@ -644,13 +700,13 @@ onUnmounted(() => {
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full min-w-0 items-center px-3">
                 <Skeleton v-if="loading" width="75%" height="1rem" />
-                <span v-else class="block w-full whitespace-normal break-words">{{ data.sizeName }}</span>
+                <span v-else class="block w-full whitespace-normal break-words">{{ data.sizeName ?? '—' }}</span>
               </div>
             </template>
-            <template #filter>
+            <!-- <template #filter>
               <InputText v-model="filterForm.sizeName" class="w-full" size="small" type="text" placeholder="..."
                 @update:model-value="onFilterTextInput" />
-            </template>
+            </template> -->
           </Column>
           <Column field="boxNo" :header="t('scanResult.boxNo')" :show-filter-menu="false"
             header-style="width: 70px; min-width: 70px; max-width: 70px"
@@ -658,7 +714,7 @@ onUnmounted(() => {
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
                 <Skeleton v-if="loading" width="40%" height="1rem" />
-                <template v-else>{{ data.boxNo }}</template>
+                <template v-else>{{ data.boxNo ?? '—' }}</template>
               </div>
             </template>
             <!-- <template #filter>
@@ -672,7 +728,7 @@ onUnmounted(() => {
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
                 <Skeleton v-if="loading" width="40%" height="1rem" />
-                <template v-else>{{ data.perCount }}</template>
+                <template v-else>{{ data.perCount ?? '—' }}</template>
               </div>
             </template>
             <!-- <template #filter>
@@ -689,11 +745,6 @@ onUnmounted(() => {
                 <Skeleton v-if="loading" width="70%" height="1rem" />
                 <template v-else>{{ formatDate(data.lastLeaveDate) }}</template>
               </div>
-            </template>
-            <template #filter>
-              <DatePicker v-model="filterLastLeaveDate" selection-mode="range" :manual-input="false" class="w-full"
-                placeholder="..." size="small" date-format="dd/mm/yy" show-icon show-clear
-                @update:model-value="onLastLeaveDateRangeUpdate" />
             </template>
           </Column>
           <template #empty>

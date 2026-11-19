@@ -36,3 +36,10 @@ export async function queryScanTypeBaseList() {
   })
   return data
 }
+
+export async function queryBoxStateBaseList() {
+  const { data } = await http.post<ApiResponse<ViewCategoryBase[]>>('/category/bsc/getbaselist', {
+    isActive: true,
+  })
+  return data
+}

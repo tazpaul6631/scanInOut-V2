@@ -55,6 +55,7 @@ export interface ScanLog {
   /** 0 = active scan, -1 = pending/confirmed delete */
   status: number
   synced: boolean
+  boxState: string
 }
 
 export interface ScaleReading {
