@@ -7,6 +7,7 @@ import dayjs from 'dayjs'
 import DatePicker from 'primevue/datepicker'
 import Skeleton from 'primevue/skeleton'
 import ProgressBar from 'primevue/progressbar'
+import Checkbox from 'primevue/checkbox'
 import Button from '@/components/ui/AppButton.vue'
 import Dialog from '@/components/ui/AppDialog.vue'
 import InputText from '@/components/ui/AppInputText.vue'
@@ -21,7 +22,7 @@ import {
 } from '@/services/api/category'
 import { readApiFailure } from '@/services/api/error'
 import { exportWebScanWorkbook, exportWebScanWorkbookFromQuery } from '@/services/scan-web-export'
-import { formatDate, toLocalFileStamp } from '@/utils/format'
+import { formatDateTime, toLocalFileStamp } from '@/utils/format'
 import { detectDeviceShell, type DeviceShell } from '@/adapters/platform'
 import type {
   ScanQueryResultRequest,
@@ -219,6 +220,11 @@ function resetAndLoad() {
   void load()
 }
 
+function onBoxStateFilterChange(checked: boolean) {
+  filterForm.value.boxState = checked ? 'Hỏng' : null
+  resetAndLoad()
+}
+
 function onFilterTextInput() {
   if (filterInputTimer) clearTimeout(filterInputTimer)
   filterInputTimer = setTimeout(() => resetAndLoad(), 300)
@@ -291,7 +297,7 @@ async function exportExcel() {
 }
 
 async function exportExcelAll() {
-  if (!hasActiveFilter.value || !totalRecords.value) return
+  // if (!hasActiveFilter.value || !totalRecords.value) return
   exportingAll.value = true
   exportProgress.value = { done: 0, total: totalRecords.value }
   exportProgressOpen.value = true
@@ -355,12 +361,12 @@ onUnmounted(() => {
         <h3 class="m-0 ml-3">{{ t('scan.history') }}</h3>
         <div class="flex flex-wrap items-center gap-2">
           <Button :label="compact ? undefined : t('common.clearFilter')" :ripple="false" icon="pi pi-filter-slash"
-            :disabled="!hasActiveFilter" :aria-label="t('common.clearFilter')" @click="clearFilters" />
-          <Button v-if="!hasActiveFilter" :label="compact ? undefined : t('common.exportExcel')" :ripple="false"
+            size="small" :disabled="!hasActiveFilter" :aria-label="t('common.clearFilter')" @click="clearFilters" />
+          <!-- <Button v-if="!hasActiveFilter" :label="compact ? undefined : t('common.exportExcel')" :ripple="false"
             icon="pi pi-file-excel" :loading="exporting" :disabled="!rows.length || exporting || exportingAll"
-            :aria-label="t('common.exportExcel')" @click="exportExcel" />
-          <Button v-else :label="compact ? undefined : t('scanResult.excelAll')" :ripple="false"
-            icon="pi pi-file-export" :loading="exportingAll" :disabled="!totalRecords || exporting || exportingAll"
+            :aria-label="t('common.exportExcel')" @click="exportExcel" /> -->
+          <Button :label="compact ? undefined : t('scanResult.excelAll')" :ripple="false" size="small"
+            icon="pi pi-file-export" :loading="exportingAll" :disabled="exporting"
             :aria-label="t('scanResult.excelAll')" @click="exportExcelAll" />
         </div>
       </div>
@@ -378,7 +384,7 @@ onUnmounted(() => {
           <Column field="scanAt" :header="t('scan.scanDate')" :show-filter-menu="false">
             <template #body="{ data }">
               <Skeleton v-if="loading" width="70%" height="1rem" />
-              <template v-else>{{ formatDate(data.scanAt) }}</template>
+              <template v-else>{{ formatDateTime(data.scanAt) }}</template>
             </template>
             <template #filter>
               <DatePicker v-model="filterScanAt" selection-mode="range" :manual-input="false" class="w-full"
@@ -457,10 +463,10 @@ onUnmounted(() => {
               <template v-else>{{ data.boxState ?? '—' }}</template>
             </template>
             <template #filter>
-              <Select v-model="filterForm.boxState" class="w-full" size="small" :options="boxStateOptions"
-                option-label="label" option-value="value" :loading="boxStateLoading"
-                :placeholder="t('scan.boxState')" show-clear @show="loadBoxStateOptions"
-                @update:model-value="resetAndLoad" />
+              <div class="flex w-full gap-2">
+                <Checkbox :model-value="filterForm.boxState === 'Hỏng'" binary size="large"
+                  inputId="scan-result-box-broken-filter" @update:model-value="onBoxStateFilterChange" />
+              </div>
             </template>
           </Column>
           <template #empty>

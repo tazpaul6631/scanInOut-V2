@@ -17,7 +17,6 @@ import DataTable from '@/components/ui/AppDataTable.vue'
 import Column from '@/components/ui/AppColumn.vue'
 import { queryScanServiceResult } from '@/services/api/scan'
 import {
-  queryBoxStateBaseList,
   queryScanTypeBaseList,
   queryWarehouseBaseList,
 } from '@/services/api/category'
@@ -112,10 +111,8 @@ function formatMethod(method: string | null | undefined) {
 
 const warehouseOptions = ref<{ label: string; value: string }[]>([])
 const scanTypeOptions = ref<{ label: string; value: string }[]>([])
-const boxStateOptions = ref<{ label: string; value: string }[]>([])
 const warehouseLoading = ref(false)
 const scanTypeLoading = ref(false)
-const boxStateLoading = ref(false)
 
 function isCompleteScanAtRange(value: Date[] | null | undefined): value is [Date, Date] {
   return Boolean(value?.[0] && value?.[1])
@@ -185,17 +182,9 @@ async function loadScanTypeOptions() {
   }
 }
 
-async function loadBoxStateOptions() {
-  if (boxStateLoading.value) return
-  boxStateLoading.value = true
-  try {
-    const res = await queryBoxStateBaseList()
-    boxStateOptions.value = toSelectOptions(res.data)
-  } catch {
-    boxStateOptions.value = []
-  } finally {
-    boxStateLoading.value = false
-  }
+function onBoxStateFilterChange(checked: boolean) {
+  filterForm.value.boxState = checked ? 'Hỏng' : null
+  resetAndLoad()
 }
 
 function refreshShell() {
@@ -473,18 +462,18 @@ onUnmounted(() => {
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <Button :label="compact ? undefined : t('common.clearFilter')" :ripple="false" icon="pi pi-filter-slash"
-            :disabled="!hasActiveFilter" :aria-label="t('common.clearFilter')" @click="clearFilters" />
+            size="small" :disabled="!hasActiveFilter" :aria-label="t('common.clearFilter')" @click="clearFilters" />
           <!-- <Button v-if="!hasActiveFilter" :label="compact ? undefined : t('common.exportExcel')" :ripple="false"
             icon="pi pi-file-excel" :loading="exporting" :disabled="!rows.length || exporting || exportingAll"
             :aria-label="t('common.exportExcel')" @click="exportExcel" /> -->
           <Button :label="compact ? undefined : t('scanResult.excelAll')" :ripple="false" icon="pi pi-file-export"
-            :loading="exportingAll" :disabled="exportingAll" :aria-label="t('scanResult.excelAll')"
+            size="small" :loading="exportingAll" :disabled="exportingAll" :aria-label="t('scanResult.excelAll')"
             @click="exportExcelAll" />
         </div>
       </div>
       <div class="table-wrap-fill w-full max-w-full overflow-x-auto">
         <DataTable :value="tableRows" data-key="id" lazy paginator :rows="pageSize" :first="first"
-          :total-records="totalRecords" :rows-per-page-options="[20, 50, 100]" scrollable showGridlines
+          :total-records="totalRecords" :rows-per-page-options="[20, 50, 100, 200]" scrollable showGridlines
           filter-display="row" scroll-height="flex" :paginator-template="paginatorTemplate"
           :current-page-report-template="pageReport" :row-class="warningRowClass" @page="onPage">
           <!-- <Column header="#" body-style=" text-align: center" frozen>
@@ -587,7 +576,7 @@ onUnmounted(() => {
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
                 <Skeleton v-if="loading" width="75%" height="1rem" />
-                <template v-else>{{ data.outBoxBarCode ?? '—' }}</template>
+                <template v-else>{{ data.outBoxBarCode ?? data.boxCode ?? '—' }}</template>
               </div>
             </template>
             <template #filter>
@@ -596,9 +585,9 @@ onUnmounted(() => {
             </template>
           </Column>
           <Column field="boxState" :header="t('scanResult.boxState')" :show-filter-menu="false"
-            header-style="width: 140px; min-width: 140px; max-width: 140px"
-            body-style="width: 140px; min-width: 140px; max-width: 140px; padding: 0"
-            filter-header-style="width: 140px; min-width: 140px; max-width: 140px; overflow: hidden"
+            header-style="width: 100px; min-width: 100px; max-width: 100px"
+            body-style="width: 100px; min-width: 100px; max-width: 100px; padding: 0"
+            filter-header-style="width: 100px; min-width: 100px; max-width: 100px; overflow: hidden"
             body-class="scan-result-warn-cell">
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full items-center px-3">
@@ -607,9 +596,10 @@ onUnmounted(() => {
               </div>
             </template>
             <template #filter>
-              <Select v-model="filterForm.boxState" class="w-full max-w-full min-w-0" size="small"
-                :options="boxStateOptions" option-label="label" option-value="value" placeholder="..."
-                :loading="boxStateLoading" show-clear @show="loadBoxStateOptions" @update:model-value="resetAndLoad" />
+              <div class="flex w-full items-center justify-center gap-2">
+                <Checkbox :model-value="filterForm.boxState === 'Hỏng'" binary size="large"
+                  inputId="scan-result-box-broken-filter" @update:model-value="onBoxStateFilterChange" />
+              </div>
             </template>
           </Column>
           <Column field="warehouseName" :header="t('scanResult.warehouseName')" :show-filter-menu="false"
@@ -700,7 +690,7 @@ onUnmounted(() => {
             <template #body="{ data }">
               <div class="box-border flex min-h-[2.75rem] w-full min-w-0 items-center px-3">
                 <Skeleton v-if="loading" width="75%" height="1rem" />
-                <span v-else class="block w-full whitespace-normal break-words">{{ data.sizeName ?? '—' }}</span>
+                <span v-else class="block w-full whitespace-normal break-words">{{ data.sizeName || '—' }}</span>
               </div>
             </template>
             <!-- <template #filter>

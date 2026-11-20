@@ -191,7 +191,8 @@ const vi: MessageSchema = {
     storageName: 'Vị trí lưu trữ trên ERP',
     excelAll: 'Xuất Excel',
     excelAllProgress: 'Đang xuất {done} / {total}…',
-    boxState: 'Trạng thái thùng',
+    boxState: 'Trạng thái thùng (Hỏng)',
+    damaged: 'Hỏng',
   },
   scan: {
     subtitle: 'Quét QR / Barcode / NFC',
@@ -252,7 +253,7 @@ const vi: MessageSchema = {
     changeLocation: 'Đổi',
     lockLocation: 'Chọn',
     boxPlaceholder: 'Quét/nhập mã thùng',
-    boxState: 'Trạng thái thùng',
+    boxState: 'Trạng thái thùng (Hỏng)',
     boxBroken: 'Hỏng',
     user: 'Người quét',
     dateNow: 'Ngày giờ',

@@ -189,7 +189,8 @@ const en = {
     storageName: 'Current ERP storage location',
     excelAll: 'Export Excel',
     excelAllProgress: 'Exporting {done} / {total}…',
-    boxState: 'Box state',
+    boxState: 'Box state (Damaged)',
+    damaged: 'Damaged',
   },
   scan: {
     subtitle: 'Scan QR / barcode / NFC',
@@ -250,7 +251,7 @@ const en = {
     changeLocation: 'Change',
     lockLocation: 'Select',
     boxPlaceholder: 'Scan/enter box code',
-    boxState: 'Box state',
+    boxState: 'Box state (Damaged)',
     boxBroken: 'Damaged',
     user: 'Scanner',
     dateNow: 'Date/time',

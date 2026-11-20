@@ -191,7 +191,8 @@ const zhTW: MessageSchema = {
     storageName: 'ERP現在儲位',
     excelAll: '匯出 Excel',
     excelAllProgress: '匯出中 {done} / {total}…',
-    boxState: '箱狀態',
+    boxState: '箱狀態 (損壞)',
+    damaged: '損壞',
   },
   scan: {
     subtitle: '掃描 QR / 條碼 / NFC',
@@ -250,7 +251,7 @@ const zhTW: MessageSchema = {
     changeLocation: '更換',
     lockLocation: '選定',
     boxPlaceholder: '掃描或輸入箱號',
-    boxState: '箱狀態',
+    boxState: '箱狀態 (損壞)',
     boxBroken: '損壞',
     user: '掃描人員',
     dateNow: '日期時間',

@@ -43,6 +43,9 @@ onMounted(refreshCounts)
       <div class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2">
         <h3 class="m-0 ml-3">{{ t('dashboard.title') }}</h3>
       </div>
+      <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+
+      </div>
     </div>
   </div>
 </template>
